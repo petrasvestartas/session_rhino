@@ -8,11 +8,12 @@ from pathlib import Path
 _GUID_FILE = Path(tempfile.gettempdir()) / "session_rhino_guids.json"
 
 _MODULE_MAP = {
-    "Point":      "session_rhino.rhino_point",
-    "Line":       "session_rhino.rhino_line",
-    "Plane":      "session_rhino.rhino_plane",
-    "Mesh":       "session_rhino.rhino_mesh",
-    "NurbsCurve": "session_rhino.rhino_nurbscurve",
+    "Point":        "session_rhino.rhino_point",
+    "Line":         "session_rhino.rhino_line",
+    "Plane":        "session_rhino.rhino_plane",
+    "Mesh":         "session_rhino.rhino_mesh",
+    "NurbsCurve":   "session_rhino.rhino_nurbscurve",
+    "NurbsSurface": "session_rhino.rhino_nurbssurface",
 }
 
 
@@ -33,6 +34,27 @@ def _save_guids(guids):
 class Session:
     def __init__(self):
         self._scene = []
+
+    @staticmethod
+    def load(filepath):
+        """Deserialize a Session JSON file into a session_py Session object.
+
+        Parameters
+        ----------
+        filepath : str
+            Path to Session JSON file (e.g. nurbs_meshing.json)
+
+        Returns
+        -------
+        session_py.session.Session
+            Deserialized session with all geometry objects.
+        """
+        from session_py.session import Session as PySession
+        from session_py.encoders import decode_node
+
+        with open(filepath, "r") as f:
+            data = json.load(f)
+        return PySession.__jsonload__(data)
 
     def add(self, obj_or_list, **kwargs):
         if not isinstance(obj_or_list, list):

@@ -5,12 +5,12 @@ def to_rhino(mesh):
     rmesh = Rhino.Geometry.Mesh()
     verts, faces = mesh.to_vertices_and_faces()
     for v in verts:
-        rmesh.Vertices.Add(v[0], v[1], v[2])
+        rmesh.Vertices.Add(float(v[0]), float(v[1]), float(v[2]))
     for f in faces:
         if len(f) == 3:
-            rmesh.Faces.AddFace(f[0], f[1], f[2])
+            rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
         elif len(f) == 4:
-            rmesh.Faces.AddFace(f[0], f[1], f[2], f[3])
+            rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
     rmesh.Normals.ComputeNormals()
     rmesh.Compact()
     return rmesh
