@@ -37,20 +37,17 @@ class Session:
 
     @staticmethod
     def load(filepath):
-        """Deserialize a Session JSON file into a session_py Session object.
+        """Deserialize a Session file (protobuf or JSON) into a session_py Session object.
 
         Parameters
         ----------
         filepath : str
-            Path to Session JSON file (e.g. nurbs_meshing.json)
-
-        Returns
-        -------
-        session_py.session.Session
-            Deserialized session with all geometry objects.
+            Path to Session file (.pb for protobuf, .json for JSON)
         """
         from session_py.session import Session as PySession
-        from session_py.encoders import decode_node
+
+        if str(filepath).endswith(".pb"):
+            return PySession.pb_load(filepath)
 
         with open(filepath, "r") as f:
             data = json.load(f)

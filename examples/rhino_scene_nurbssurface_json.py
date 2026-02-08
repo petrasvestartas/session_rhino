@@ -7,7 +7,7 @@ reload_all()
 
 from session_rhino.session import Session
 
-filepath = r"c:\pc\3_code\code_rust\session\session_data\nurbs_meshing_3.json"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\create_network.pb"
 data = Session.load(filepath)
 print(data.objects.nurbssurfaces)
 
