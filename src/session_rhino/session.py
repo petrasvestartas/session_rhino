@@ -13,6 +13,7 @@ _MODULE_MAP = {
     "Plane":        "session_rhino.rhino_plane",
     "Mesh":         "session_rhino.rhino_mesh",
     "NurbsCurve":   "session_rhino.rhino_nurbscurve",
+    "Polyline":     "session_rhino.rhino_polyline",
     "NurbsSurface": "session_rhino.rhino_nurbssurface",
 }
 

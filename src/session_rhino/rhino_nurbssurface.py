@@ -61,6 +61,27 @@ def to_rhino(srf):
     return rsrf
 
 
+def _apply_attributes(doc, guid, srf):
+    obj = doc.Objects.Find(guid)
+    if obj is None:
+        return
+    attr = obj.Attributes
+    changed = False
+    color = None
+    if len(srf.facecolors) > 0:
+        color = srf.facecolors[0]
+    elif len(srf.linecolors) > 0:
+        color = srf.linecolors[0]
+    elif len(srf.pointcolors) > 0:
+        color = srf.pointcolors[0]
+    if color is not None:
+        attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
+        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        changed = True
+    if changed:
+        doc.Objects.ModifyAttributes(guid, attr, True)
+
+
 def add(obj_or_list, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
@@ -74,13 +95,7 @@ def add(obj_or_list, **kwargs):
             guid = doc.Objects.AddSurface(robj)
         else:
             guid = doc.Objects.AddBrep(robj)
-        obj = doc.Objects.Find(guid)
-        if obj is not None and srf.surfacecolor is not None:
-            attr = obj.Attributes
-            attr.ObjectColor = System.Drawing.Color.FromArgb(
-                srf.surfacecolor.r, srf.surfacecolor.g, srf.surfacecolor.b)
-            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-            doc.Objects.ModifyAttributes(guid, attr, True)
+        _apply_attributes(doc, guid, srf)
         guids.append(guid)
     doc.Views.Redraw()
     return guids

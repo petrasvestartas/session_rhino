@@ -9,7 +9,25 @@ def to_rhino(ln):
     )
 
 
-def add(obj_or_list):
+def _apply_attributes(doc, guid, ln):
+    obj = doc.Objects.Find(guid)
+    if obj is None:
+        return
+    attr = obj.Attributes
+    changed = False
+    if ln.linecolor is not None:
+        attr.ObjectColor = System.Drawing.Color.FromArgb(ln.linecolor.a, ln.linecolor.r, ln.linecolor.g, ln.linecolor.b)
+        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        changed = True
+    if ln.width > 0 and ln.width != 1.0:
+        attr.PlotWeight = ln.width
+        attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
+        changed = True
+    if changed:
+        doc.Objects.ModifyAttributes(guid, attr, True)
+
+
+def add(obj_or_list, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
@@ -17,11 +35,8 @@ def add(obj_or_list):
     for ln in obj_or_list:
         rln = to_rhino(ln)
         guid = doc.Objects.AddLine(rln)
-        if ln.linecolor is not None:
-            attr = doc.Objects.Find(guid).Attributes
-            attr.ObjectColor = System.Drawing.Color.FromArgb(ln.linecolor.r, ln.linecolor.g, ln.linecolor.b)
-            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-            doc.Objects.ModifyAttributes(guid, attr, True)
+        if guid != System.Guid.Empty:
+            _apply_attributes(doc, guid, ln)
         guids.append(guid)
     doc.Views.Redraw()
     return guids
