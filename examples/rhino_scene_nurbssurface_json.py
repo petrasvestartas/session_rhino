@@ -7,7 +7,7 @@ reload_all()
 
 from session_rhino.session import Session
 
-filepath = r"c:\pc\3_code\code_rust\session\session_data\network_surface.pb"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\primitives.pb"
 data = Session.load(filepath)
 
 scene = Session()
@@ -17,13 +17,14 @@ for crv in data.objects.nurbscurves:
 
 for srf in data.objects.nurbssurfaces:
     scene.add(srf)
-    scene.add(srf.mesh())
+    # scene.add(srf.mesh())
+    # print(srf.name)
 
 
-print(data.objects.meshes)
+# print(data.objects.meshes)
 for mesh in data.objects.meshes:
     scene.add(mesh)
 
-print("scene items:", len(scene._scene))
+# print("scene items:", len(scene._scene))
 guids = scene.draw(delete=True)
 print("guids:", guids)
