@@ -2,41 +2,59 @@ import Rhino
 import System
 
 
-def _fan_triangulate(face):
-    """Triangulate a polygon face using fan triangulation from vertex 0."""
-    tris = []
-    for i in range(1, len(face) - 1):
-        tris.append((int(face[0]), int(face[i]), int(face[i + 1])))
-    return tris
-
-
 def to_rhino(mesh):
     rmesh = Rhino.Geometry.Mesh()
     verts, faces = mesh.to_vertices_and_faces()
     for v in verts:
         rmesh.Vertices.Add(float(v[0]), float(v[1]), float(v[2]))
-    ngon_data = []
+
+    v_offset = 0
+    f_offset = 0
+
     for f in faces:
         n = len(f)
         if n == 3:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
+            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
+                [int(x) for x in f], [f_offset]))
+            f_offset += 1
         elif n == 4:
-            rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
+            rmesh.Faces.AddFace(int(f[3]), int(f[2]), int(f[1]), int(f[0]))
+            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
+                [int(x) for x in f], [f_offset]))
+            f_offset += 1
         elif n >= 5:
-            start_fi = rmesh.Faces.Count
-            tris = _fan_triangulate(f)
-            for t in tris:
-                rmesh.Faces.AddFace(t[0], t[1], t[2])
-            end_fi = rmesh.Faces.Count
-            ngon_data.append(([int(v) for v in f], list(range(start_fi, end_fi))))
+            cx, cy, cz = 0.0, 0.0, 0.0
+            for vi in f:
+                pt = verts[int(vi)]
+                cx += float(pt[0])
+                cy += float(pt[1])
+                cz += float(pt[2])
+            cx /= n
+            cy /= n
+            cz /= n
+            center_idx = rmesh.Vertices.Count
+            rmesh.Vertices.Add(cx, cy, cz)
+
+            start_fi = f_offset
+            for i in range(n):
+                rmesh.Faces.AddFace(int(f[i]), int(f[(i + 1) % n]), center_idx)
+                f_offset += 1
+
+            ngon_verts = [int(x) for x in f]
+            ngon_faces = list(range(start_fi, f_offset))
+            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+
     if len(mesh.pointcolors) > 0 and len(mesh.pointcolors) == len(verts):
         for c in mesh.pointcolors:
             rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
-    rmesh.Normals.ComputeNormals()
+
     rmesh.Compact()
-    for vi_list, fi_list in ngon_data:
-        ngon = Rhino.Geometry.MeshNgon.Create(vi_list, fi_list)
-        rmesh.Ngons.AddNgon(ngon)
+    if rmesh.Ngons.Count > 0:
+        rmesh.UnifyNormals()
+    rmesh.FaceNormals.ComputeFaceNormals()
+    rmesh.Normals.ComputeNormals()
+    rmesh.Weld(3.14159265358979)
     return rmesh
 
 

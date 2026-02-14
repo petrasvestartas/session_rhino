@@ -18,12 +18,13 @@ for crv in data.objects.nurbscurves:
 for srf in data.objects.nurbssurfaces:
     scene.add(srf)
     # scene.add(srf.mesh())
-    # print(srf.name)
+    
 
 
 # print(data.objects.meshes)
 for mesh in data.objects.meshes:
     scene.add(mesh)
+    # print(mesh.is_valid())
 
 # print("scene items:", len(scene._scene))
 guids = scene.draw(delete=True)
