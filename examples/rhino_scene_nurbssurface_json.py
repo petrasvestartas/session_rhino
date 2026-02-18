@@ -8,7 +8,7 @@ reload_all()
 from session_rhino.session import Session
 
 # filepath = r"c:\pc\3_code\code_rust\session\session_data\primitives.pb"
-filepath = r"c:\pc\3_code\code_rust\session\session_data\primitives.pb"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\surface.pb"
 data = Session.load(filepath)
 
 scene = Session()
@@ -24,6 +24,9 @@ for mesh in data.objects.meshes:
 
 for ln in data.objects.lines:
     scene.add(ln)
+
+for pt in data.objects.points:
+    scene.add(pt)
 
 for pl in data.objects.polylines:
     scene.add(pl)
