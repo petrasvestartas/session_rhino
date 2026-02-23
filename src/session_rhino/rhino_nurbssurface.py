@@ -27,38 +27,8 @@ def _build_rhino_surface(srf):
     return rsrf
 
 
-def _eval_loop_3d(srf, loop, rsrf):
-    deg = loop.degree()
-    pts = []
-    for i in range(loop.cv_count()):
-        uv = loop.get_cv(i)
-        pt3d = rsrf.PointAt(uv[0], uv[1])
-        pts.append(pt3d)
-    if deg <= 1:
-        pts.append(pts[0])
-        return Rhino.Geometry.PolylineCurve([Rhino.Geometry.Point3d(p.X, p.Y, p.Z) for p in pts])
-    return Rhino.Geometry.Curve.CreateInterpolatedCurve(
-        pts, deg, Rhino.Geometry.CurveKnotStyle.Chord)
-
-
 def to_rhino(srf):
-    rsrf = _build_rhino_surface(srf)
-    if not srf.is_trimmed():
-        return rsrf
-    tol = Rhino.RhinoDoc.ActiveDoc.ModelAbsoluteTolerance
-    outer_loop = srf.get_outer_loop()
-    curves_3d = [_eval_loop_3d(srf, outer_loop, rsrf)]
-    for i in range(srf.inner_loop_count()):
-        curves_3d.append(_eval_loop_3d(srf, srf.get_inner_loop(i), rsrf))
-    breps = Rhino.Geometry.Brep.CreatePlanarBreps(curves_3d, tol)
-    if breps and len(breps) > 0:
-        return breps[0]
-    brep = rsrf.ToBrep()
-    if brep and brep.Faces.Count > 0:
-        split_breps = brep.Faces[0].Split(curves_3d, tol)
-        if split_breps:
-            return split_breps
-    return rsrf
+    return _build_rhino_surface(srf)
 
 
 def _apply_attributes(doc, guid, srf):

@@ -19,7 +19,7 @@ def to_rhino(mesh):
                 [int(x) for x in f], [f_offset]))
             f_offset += 1
         elif n == 4:
-            rmesh.Faces.AddFace(int(f[3]), int(f[2]), int(f[1]), int(f[0]))
+            rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
                 [int(x) for x in f], [f_offset]))
             f_offset += 1

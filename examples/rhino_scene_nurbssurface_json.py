@@ -7,8 +7,7 @@ reload_all()
 
 from session_rhino.session import Session
 
-# filepath = r"c:\pc\3_code\code_rust\session\session_data\primitives.pb"
-filepath = r"c:\pc\3_code\code_rust\session\session_data\surface.pb"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\brep_demo.pb"
 data = Session.load(filepath)
 
 scene = Session()
@@ -30,6 +29,9 @@ for pt in data.objects.points:
 
 for pl in data.objects.polylines:
     scene.add(pl)
+
+for brep in data.objects.breps:
+    scene.add(brep)
 
 guids = scene.draw(delete=True)
 print("guids:", guids)

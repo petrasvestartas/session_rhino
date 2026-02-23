@@ -15,6 +15,7 @@ _MODULE_MAP = {
     "NurbsCurve":   "session_rhino.rhino_nurbscurve",
     "Polyline":     "session_rhino.rhino_polyline",
     "NurbsSurface": "session_rhino.rhino_nurbssurface",
+    "BRep":         "session_rhino.rhino_brep",
 }
 
 
