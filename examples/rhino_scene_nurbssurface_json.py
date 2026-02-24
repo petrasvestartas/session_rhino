@@ -7,7 +7,7 @@ reload_all()
 
 from session_rhino.session import Session
 
-filepath = r"c:\pc\3_code\code_rust\session\session_data\brep_demo.pb"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\mesh.pb"
 data = Session.load(filepath)
 
 scene = Session()
