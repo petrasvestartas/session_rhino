@@ -2,13 +2,77 @@ import Rhino
 import System
 
 
+def _is_colored(colors):
+    return any(c[0] != 255 or c[1] != 255 or c[2] != 255 for c in colors)
+
+
+def _to_rhino_face_colors(mesh):
+    rmesh = Rhino.Geometry.Mesh()
+    face_keys = sorted(mesh.face.keys())
+    f_offset = 0
+    for fi, fk in enumerate(face_keys):
+        vks = mesh.face[fk]
+        n = len(vks)
+        fc = mesh.facecolors[fi] if fi < len(mesh.facecolors) else None
+        base = rmesh.Vertices.Count
+        if n <= 4:
+            for vk in vks:
+                pt = mesh.vertex[vk].position()
+                rmesh.Vertices.Add(float(pt[0]), float(pt[1]), float(pt[2]))
+                if fc is not None:
+                    rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
+            if n == 3:
+                rmesh.Faces.AddFace(base, base + 1, base + 2)
+                rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
+                    list(range(base, base + 3)), [f_offset]))
+                f_offset += 1
+            else:
+                rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
+                rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
+                    list(range(base, base + 4)), [f_offset]))
+                f_offset += 1
+        else:
+            cx, cy, cz = 0.0, 0.0, 0.0
+            for vk in vks:
+                pt = mesh.vertex[vk].position()
+                cx += float(pt[0]); cy += float(pt[1]); cz += float(pt[2])
+            cx /= n; cy /= n; cz /= n
+            for vk in vks:
+                pt = mesh.vertex[vk].position()
+                rmesh.Vertices.Add(float(pt[0]), float(pt[1]), float(pt[2]))
+                if fc is not None:
+                    rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
+            center_idx = rmesh.Vertices.Count
+            rmesh.Vertices.Add(cx, cy, cz)
+            if fc is not None:
+                rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
+            start_fi = f_offset
+            for i in range(n):
+                rmesh.Faces.AddFace(base + i, base + (i + 1) % n, center_idx)
+                f_offset += 1
+            ngon_verts = list(range(base, base + n))
+            ngon_faces = list(range(start_fi, f_offset))
+            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+    rmesh.Compact()
+    if rmesh.Ngons.Count > 0:
+        rmesh.UnifyNormals()
+    rmesh.FaceNormals.ComputeFaceNormals()
+    rmesh.Normals.ComputeNormals()
+    return rmesh
+
+
 def to_rhino(mesh):
+    any_vc = _is_colored(mesh.pointcolors)
+    any_fc = _is_colored(mesh.facecolors)
+
+    if any_fc and not any_vc:
+        return _to_rhino_face_colors(mesh)
+
     rmesh = Rhino.Geometry.Mesh()
     verts, faces = mesh.to_vertices_and_faces()
     for v in verts:
         rmesh.Vertices.Add(float(v[0]), float(v[1]), float(v[2]))
 
-    v_offset = 0
     f_offset = 0
 
     for f in faces:
@@ -45,7 +109,7 @@ def to_rhino(mesh):
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
 
-    if len(mesh.pointcolors) > 0 and len(mesh.pointcolors) == len(verts):
+    if any_vc and len(mesh.pointcolors) == len(verts):
         for c in mesh.pointcolors:
             rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
 
@@ -63,23 +127,22 @@ def _apply_attributes(doc, guid, mesh):
     if obj is None:
         return
     attr = obj.Attributes
-    changed = False
     color = None
-    if len(mesh.facecolors) > 0:
-        color = mesh.facecolors[0]
-    elif len(mesh.linecolors) > 0:
-        color = mesh.linecolors[0]
-    elif len(mesh.pointcolors) > 0:
-        color = mesh.pointcolors[0]
+    if _is_colored(mesh.facecolors):
+        color = next((c for c in mesh.facecolors if _is_colored([c])), None)
+    elif _is_colored(mesh.linecolors):
+        color = next((c for c in mesh.linecolors if _is_colored([c])), None)
+    elif _is_colored(mesh.pointcolors):
+        color = next((c for c in mesh.pointcolors if _is_colored([c])), None)
     if color is not None:
         attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
         attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        changed = True
-    if changed:
         doc.Objects.ModifyAttributes(guid, attr, True)
 
 
 def add(obj_or_list, **kwargs):
+    from session_py.primitives import Primitives
+    from session_py.line import Line
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
@@ -90,5 +153,22 @@ def add(obj_or_list, **kwargs):
         if guid != System.Guid.Empty:
             _apply_attributes(doc, guid, mesh)
         guids.append(guid)
+        edges = mesh.edges()
+        for i, (u, v) in enumerate(edges):
+            lc = mesh.linecolors[i] if i < len(mesh.linecolors) else None
+            if lc is None or not _is_colored([lc]):
+                continue
+            w = mesh.widths[i] if i < len(mesh.widths) else 1.0
+            start = mesh.vertex[u].position()
+            end = mesh.vertex[v].position()
+            line = Line(start[0], start[1], start[2], end[0], end[1], end[2])
+            pipe = Primitives.cylinder_mesh(line, w)
+            if lc is not None:
+                for j in range(len(pipe.facecolors)):
+                    pipe.facecolors[j] = lc
+            rpipe = to_rhino(pipe)
+            pipe_guid = doc.Objects.AddMesh(rpipe)
+            if pipe_guid != System.Guid.Empty:
+                _apply_attributes(doc, pipe_guid, pipe)
     doc.Views.Redraw()
     return guids
