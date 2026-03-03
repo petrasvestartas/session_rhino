@@ -32,28 +32,20 @@ def _to_rhino_face_colors(mesh):
                     list(range(base, base + 4)), [f_offset]))
                 f_offset += 1
         else:
-            cx, cy, cz = 0.0, 0.0, 0.0
-            for vk in vks:
-                pt = mesh.vertex[vk].position()
-                cx += float(pt[0]); cy += float(pt[1]); cz += float(pt[2])
-            cx /= n; cy /= n; cz /= n
             for vk in vks:
                 pt = mesh.vertex[vk].position()
                 rmesh.Vertices.Add(float(pt[0]), float(pt[1]), float(pt[2]))
                 if fc is not None:
                     rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
-            center_idx = rmesh.Vertices.Count
-            rmesh.Vertices.Add(cx, cy, cz)
-            if fc is not None:
-                rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
             start_fi = f_offset
-            for i in range(n):
-                rmesh.Faces.AddFace(base + i, base + (i + 1) % n, center_idx)
+            for i in range(1, n - 1):
+                rmesh.Faces.AddFace(base, base + i, base + i + 1)
                 f_offset += 1
             ngon_verts = list(range(base, base + n))
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
     rmesh.Compact()
+    rmesh.Vertices.CombineIdentical(False, False)
     if rmesh.Ngons.Count > 0:
         rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -64,8 +56,9 @@ def _to_rhino_face_colors(mesh):
 def to_rhino(mesh):
     any_vc = _is_colored(mesh.pointcolors)
     any_fc = _is_colored(mesh.facecolors)
+    any_lc = _is_colored(mesh.linecolors)
 
-    if any_fc and not any_vc:
+    if any_fc:
         return _to_rhino_face_colors(mesh)
 
     rmesh = Rhino.Geometry.Mesh()
@@ -79,32 +72,15 @@ def to_rhino(mesh):
         n = len(f)
         if n == 3:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
-                [int(x) for x in f], [f_offset]))
             f_offset += 1
         elif n == 4:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
-                [int(x) for x in f], [f_offset]))
             f_offset += 1
         elif n >= 5:
-            cx, cy, cz = 0.0, 0.0, 0.0
-            for vi in f:
-                pt = verts[int(vi)]
-                cx += float(pt[0])
-                cy += float(pt[1])
-                cz += float(pt[2])
-            cx /= n
-            cy /= n
-            cz /= n
-            center_idx = rmesh.Vertices.Count
-            rmesh.Vertices.Add(cx, cy, cz)
-
             start_fi = f_offset
-            for i in range(n):
-                rmesh.Faces.AddFace(int(f[i]), int(f[(i + 1) % n]), center_idx)
+            for i in range(1, n - 1):
+                rmesh.Faces.AddFace(int(f[0]), int(f[i]), int(f[i + 1]))
                 f_offset += 1
-
             ngon_verts = [int(x) for x in f]
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
@@ -113,16 +89,18 @@ def to_rhino(mesh):
         for c in mesh.pointcolors:
             rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
 
+    if any_lc and not any_fc and not any_vc:
+        rmesh.Weld(3.14159265358979)
+
     rmesh.Compact()
-    if rmesh.Ngons.Count > 0:
-        rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
     rmesh.Normals.ComputeNormals()
-    rmesh.Weld(3.14159265358979)
     return rmesh
 
 
-def _apply_attributes(doc, guid, mesh):
+def _apply_attributes(doc, guid, mesh, apply_object_color=False):
+    if not apply_object_color:
+        return
     obj = doc.Objects.Find(guid)
     if obj is None:
         return
@@ -169,6 +147,6 @@ def add(obj_or_list, **kwargs):
             rpipe = to_rhino(pipe)
             pipe_guid = doc.Objects.AddMesh(rpipe)
             if pipe_guid != System.Guid.Empty:
-                _apply_attributes(doc, pipe_guid, pipe)
+                _apply_attributes(doc, pipe_guid, pipe, apply_object_color=True)
     doc.Views.Redraw()
     return guids
