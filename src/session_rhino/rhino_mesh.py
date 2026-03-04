@@ -44,8 +44,6 @@ def _to_rhino_face_colors(mesh):
             ngon_verts = list(range(base, base + n))
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
-    rmesh.Compact()
-    rmesh.Vertices.CombineIdentical(False, False)
     if rmesh.Ngons.Count > 0:
         rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -54,11 +52,16 @@ def _to_rhino_face_colors(mesh):
 
 
 def to_rhino(mesh):
+    from session_py.mesh import ColorMode
+    mode = mesh.color_mode
     any_vc = _is_colored(mesh.pointcolors)
     any_fc = _is_colored(mesh.facecolors)
     any_lc = _is_colored(mesh.linecolors)
 
-    if any_fc:
+    use_fc = mode == ColorMode.FACECOLORS
+    use_vc = mode == ColorMode.POINTCOLORS
+
+    if use_fc:
         return _to_rhino_face_colors(mesh)
 
     rmesh = Rhino.Geometry.Mesh()
@@ -85,11 +88,11 @@ def to_rhino(mesh):
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
 
-    if any_vc and len(mesh.pointcolors) == len(verts):
+    if use_vc and len(mesh.pointcolors) == len(verts):
         for c in mesh.pointcolors:
             rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
 
-    if any_lc and not any_fc and not any_vc:
+    if any_lc and not use_fc and not use_vc:
         rmesh.Weld(3.14159265358979)
 
     rmesh.Compact()
@@ -104,18 +107,38 @@ def _apply_attributes(doc, guid, mesh, apply_object_color=False):
     obj = doc.Objects.Find(guid)
     if obj is None:
         return
+    from session_py.mesh import ColorMode
+    mode = mesh.color_mode
     attr = obj.Attributes
+    attr.Name = mesh.name
     color = None
-    if _is_colored(mesh.facecolors):
-        color = next((c for c in mesh.facecolors if _is_colored([c])), None)
-    elif _is_colored(mesh.linecolors):
-        color = next((c for c in mesh.linecolors if _is_colored([c])), None)
-    elif _is_colored(mesh.pointcolors):
+    if mode == ColorMode.NONE:
+        pass
+    elif mode == ColorMode.POINTCOLORS:
         color = next((c for c in mesh.pointcolors if _is_colored([c])), None)
+    elif mode == ColorMode.FACECOLORS:
+        color = next((c for c in mesh.facecolors if _is_colored([c])), None)
+    else:
+        color = mesh.objectcolor if _is_colored([mesh.objectcolor]) else None
     if color is not None:
         attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
         attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        doc.Objects.ModifyAttributes(guid, attr, True)
+    doc.Objects.ModifyAttributes(guid, attr, True)
+
+
+def _delete_by_session_guid(doc, session_guid):
+    ids = [obj.Id for obj in doc.Objects if obj.Attributes.GetUserString("session_guid") == session_guid]
+    for oid in ids:
+        doc.Objects.Delete(oid, True)
+
+
+def _tag_session_guid(doc, guid, session_guid):
+    obj = doc.Objects.Find(guid)
+    if obj is None:
+        return
+    attr = obj.Attributes
+    attr.SetUserString("session_guid", session_guid)
+    doc.Objects.ModifyAttributes(guid, attr, True)
 
 
 def add(obj_or_list, **kwargs):
@@ -126,11 +149,16 @@ def add(obj_or_list, **kwargs):
     guids = []
     doc = Rhino.RhinoDoc.ActiveDoc
     for mesh in obj_or_list:
+        if mesh.guid:
+            _delete_by_session_guid(doc, mesh.guid)
         rmesh = to_rhino(mesh)
         guid = doc.Objects.AddMesh(rmesh)
         if guid != System.Guid.Empty:
-            _apply_attributes(doc, guid, mesh)
+            _apply_attributes(doc, guid, mesh, apply_object_color=True)
+            if mesh.guid:
+                _tag_session_guid(doc, guid, mesh.guid)
         guids.append(guid)
+        pipe_guids = []
         edges = mesh.edges()
         for i, (u, v) in enumerate(edges):
             lc = mesh.linecolors[i] if i < len(mesh.linecolors) else None
@@ -140,13 +168,22 @@ def add(obj_or_list, **kwargs):
             start = mesh.vertex[u].position()
             end = mesh.vertex[v].position()
             line = Line(start[0], start[1], start[2], end[0], end[1], end[2])
-            pipe = Primitives.cylinder_mesh(line, w)
-            if lc is not None:
-                for j in range(len(pipe.facecolors)):
-                    pipe.facecolors[j] = lc
+            pipe = Primitives.capsule_mesh(line, w)
+            pipe.set_facecolors([lc] * pipe.number_of_faces())
             rpipe = to_rhino(pipe)
             pipe_guid = doc.Objects.AddMesh(rpipe)
             if pipe_guid != System.Guid.Empty:
                 _apply_attributes(doc, pipe_guid, pipe, apply_object_color=True)
+                if mesh.guid:
+                    _tag_session_guid(doc, pipe_guid, mesh.guid)
+                pipe_guids.append(pipe_guid)
+        if pipe_guids and guid != System.Guid.Empty:
+            group_idx = doc.Groups.Add()
+            for g in [guid] + pipe_guids:
+                obj = doc.Objects.Find(g)
+                if obj is not None:
+                    attr = obj.Attributes
+                    attr.AddToGroup(group_idx)
+                    doc.Objects.ModifyAttributes(g, attr, True)
     doc.Views.Redraw()
     return guids
