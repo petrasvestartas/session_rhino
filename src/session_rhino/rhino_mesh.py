@@ -38,9 +38,16 @@ def _to_rhino_face_colors(mesh):
                 if fc is not None:
                     rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
             start_fi = f_offset
-            for i in range(1, n - 1):
-                rmesh.Faces.AddFace(base, base + i, base + i + 1)
-                f_offset += 1
+            stored = mesh.triangulation.get(fk)
+            if stored is not None:
+                vk_to_local = {vk: j for j, vk in enumerate(vks)}
+                for t in stored:
+                    rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
+                    f_offset += 1
+            else:
+                for i in range(1, n - 1):
+                    rmesh.Faces.AddFace(base, base + i, base + i + 1)
+                    f_offset += 1
             ngon_verts = list(range(base, base + n))
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
@@ -66,12 +73,14 @@ def to_rhino(mesh):
 
     rmesh = Rhino.Geometry.Mesh()
     verts, faces = mesh.to_vertices_and_faces()
+    vkey_to_idx = {vk: i for i, vk in enumerate(sorted(mesh.vertex.keys()))}
+    face_keys = sorted(mesh.face.keys())
     for v in verts:
         rmesh.Vertices.Add(float(v[0]), float(v[1]), float(v[2]))
 
     f_offset = 0
 
-    for f in faces:
+    for fi, f in enumerate(faces):
         n = len(f)
         if n == 3:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
@@ -81,9 +90,15 @@ def to_rhino(mesh):
             f_offset += 1
         elif n >= 5:
             start_fi = f_offset
-            for i in range(1, n - 1):
-                rmesh.Faces.AddFace(int(f[0]), int(f[i]), int(f[i + 1]))
-                f_offset += 1
+            tris = mesh.triangulation.get(face_keys[fi]) if fi < len(face_keys) else None
+            if tris is not None:
+                for t in tris:
+                    rmesh.Faces.AddFace(vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]])
+                    f_offset += 1
+            else:
+                for i in range(1, n - 1):
+                    rmesh.Faces.AddFace(int(f[0]), int(f[i]), int(f[i + 1]))
+                    f_offset += 1
             ngon_verts = [int(x) for x in f]
             ngon_faces = list(range(start_fi, f_offset))
             rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
