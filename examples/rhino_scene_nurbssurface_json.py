@@ -1,57 +1,18 @@
 #! python3
 # venv: session_py
 
-import Rhino
-import System
-
 from session_py.reload import reload_all
 import session_rhino
 reload_all()
 
-from session_rhino.session import Session, _load_guids, _save_guids
-#  mesh_quad_tri_loft7_out
-# mesh_recheck
-filepath = r"c:\pc\3_code\code_rust\session\session_data\mesh_recheck.pb"
-data = Session.load(filepath)
+from session_rhino.session import Session
+from session_py.point import Point
+from session_py.line import Line
 
-scene = Session()
+filepath = r"c:\pc\3_code\code_rust\session\session_data\mesh_quad_tri_loft10_out.pb"
+scene = Session.load(filepath)
 
-for crv in data.objects.nurbscurves:
-    scene.add(crv)
+scene.add(Point(0, 0, 0))
+scene.add(Line(0, 0, 0, 10, 0, 0))
 
-for srf in data.objects.nurbssurfaces:
-    scene.add(srf)
-
-for mesh in data.objects.meshes:
-    scene.add(mesh)
-
-for ln in data.objects.lines:
-    scene.add(ln)
-
-for pt in data.objects.points:
-    scene.add(pt)
-
-for pl in data.objects.polylines:
-    scene.add(pl)
-
-for brep in data.objects.breps:
-    scene.add(brep)
-
-guids = scene.draw(delete=True)
-
-doc = Rhino.RhinoDoc.ActiveDoc
-tag_guids = []
-for i, mesh in enumerate(data.objects.meshes):
-    verts, _ = mesh.to_vertices_and_faces()
-    if not verts:
-        continue
-    cx = sum(v[0] for v in verts) / len(verts)
-    cy = sum(v[1] for v in verts) / len(verts)
-    cz = sum(v[2] for v in verts) / len(verts)
-    g = doc.Objects.AddTextDot(str(i), Rhino.Geometry.Point3d(cx, cy, cz))
-    if g != System.Guid.Empty:
-        tag_guids.append(str(g))
-
-_save_guids(guids + tag_guids)
-doc.Views.Redraw()
-print("guids:", len(guids), "meshes:", len(data.objects.meshes))
+scene.draw(delete=True)
