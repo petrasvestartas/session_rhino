@@ -31,41 +31,30 @@ def to_rhino(srf):
     return _build_rhino_surface(srf)
 
 
-def _apply_attributes(doc, guid, srf):
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    attr = obj.Attributes
-    changed = False
-    color = None
-    if len(srf.facecolors) > 0:
-        color = srf.facecolors[0]
-    elif len(srf.linecolors) > 0:
-        color = srf.linecolors[0]
-    elif len(srf.pointcolors) > 0:
-        color = srf.pointcolors[0]
-    if color is not None:
-        attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
-        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        changed = True
-    if changed:
-        doc.Objects.ModifyAttributes(guid, attr, True)
-
-
-def add(obj_or_list, **kwargs):
+def add(obj_or_list, layer_idx=0, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
     doc = Rhino.RhinoDoc.ActiveDoc
     for srf in obj_or_list:
         robj = to_rhino(srf)
+        attr = Rhino.DocObjects.ObjectAttributes()
+        attr.LayerIndex = layer_idx
+        color = None
+        if len(srf.facecolors) > 0:
+            color = srf.facecolors[0]
+        elif len(srf.linecolors) > 0:
+            color = srf.linecolors[0]
+        elif len(srf.pointcolors) > 0:
+            color = srf.pointcolors[0]
+        if color is not None:
+            attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
+            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
         if isinstance(robj, Rhino.Geometry.Brep):
-            guid = doc.Objects.AddBrep(robj)
+            guid = doc.Objects.AddBrep(robj, attr)
         elif isinstance(robj, Rhino.Geometry.NurbsSurface):
-            guid = doc.Objects.AddSurface(robj)
+            guid = doc.Objects.AddSurface(robj, attr)
         else:
-            guid = doc.Objects.AddBrep(robj)
-        _apply_attributes(doc, guid, srf)
+            guid = doc.Objects.AddBrep(robj, attr)
         guids.append(guid)
-    doc.Views.Redraw()
     return guids

@@ -9,7 +9,7 @@ def to_rhino(pl):
     return Rhino.Geometry.Plane(origin, x_axis, y_axis)
 
 
-def add(obj_or_list, scale=1.0):
+def add(obj_or_list, scale=1.0, layer_idx=0, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
@@ -28,7 +28,9 @@ def add(obj_or_list, scale=1.0):
         mesh.Vertices.Add(c3)
         mesh.Faces.AddFace(0, 1, 2, 3)
         mesh.Normals.ComputeNormals()
-        guids.append(doc.Objects.AddMesh(mesh))
+        mesh_attr = Rhino.DocObjects.ObjectAttributes()
+        mesh_attr.LayerIndex = layer_idx
+        mesh_guid = doc.Objects.AddMesh(mesh, mesh_attr)
 
         o = rpl.Origin
         ax_len = scale * 0.5
@@ -36,16 +38,15 @@ def add(obj_or_list, scale=1.0):
         y_end = Rhino.Geometry.Point3d(o.X + rpl.YAxis.X * ax_len, o.Y + rpl.YAxis.Y * ax_len, o.Z + rpl.YAxis.Z * ax_len)
         z_end = Rhino.Geometry.Point3d(o.X + rpl.ZAxis.X * ax_len, o.Y + rpl.ZAxis.Y * ax_len, o.Z + rpl.ZAxis.Z * ax_len)
 
+        plane_guids = [mesh_guid]
         for end, color in [(x_end, System.Drawing.Color.Red), (y_end, System.Drawing.Color.Green), (z_end, System.Drawing.Color.Blue)]:
-            guid = doc.Objects.AddLine(Rhino.Geometry.Line(o, end))
-            attr = doc.Objects.Find(guid).Attributes
+            attr = Rhino.DocObjects.ObjectAttributes()
+            attr.LayerIndex = layer_idx
             attr.ObjectColor = color
             attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-            doc.Objects.ModifyAttributes(guid, attr, True)
-            guids.append(guid)
+            plane_guids.append(doc.Objects.AddLine(Rhino.Geometry.Line(o, end), attr))
 
-        plane_guids = guids[-4:]
         doc.Groups.Add(plane_guids)
+        guids.extend(plane_guids)
 
-    doc.Views.Redraw()
     return guids

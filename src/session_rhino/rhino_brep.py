@@ -110,29 +110,21 @@ def to_rhino(brep):
     return face_breps
 
 
-def _apply_attributes(doc, guid, brep):
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    attr = obj.Attributes
-    c = brep.surfacecolor
-    if c.r or c.g or c.b:
-        attr.ObjectColor = System.Drawing.Color.FromArgb(int(c.a), int(c.r), int(c.g), int(c.b))
-        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        doc.Objects.ModifyAttributes(guid, attr, True)
-
-
-def add(obj_or_list, **kwargs):
+def add(obj_or_list, layer_idx=0, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
     doc = Rhino.RhinoDoc.ActiveDoc
     for brep in obj_or_list:
         rbreps = to_rhino(brep)
+        c = brep.surfacecolor
+        attr = Rhino.DocObjects.ObjectAttributes()
+        attr.LayerIndex = layer_idx
+        if c.r or c.g or c.b:
+            attr.ObjectColor = System.Drawing.Color.FromArgb(int(c.a), int(c.r), int(c.g), int(c.b))
+            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
         for rb in rbreps:
-            guid = doc.Objects.AddBrep(rb)
+            guid = doc.Objects.AddBrep(rb, attr)
             if guid != System.Guid.Empty:
-                _apply_attributes(doc, guid, brep)
                 guids.append(guid)
-    doc.Views.Redraw()
     return guids

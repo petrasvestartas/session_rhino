@@ -75,18 +75,7 @@ class Session:
             for guid_str in _load_guids():
                 doc.Objects.Delete(System.Guid(guid_str), True)
 
-        guid_map = {}
-        new_guids = []
-        for obj, kwargs in self._scene:
-            type_name = type(obj).__name__
-            if type_name not in _MODULE_MAP:
-                continue
-            module = _get_module(type_name)
-            rhino_guids = module.add(obj, **kwargs)
-            if hasattr(obj, "guid"):
-                guid_map[obj.guid] = rhino_guids
-            new_guids.extend(str(g) for g in rhino_guids)
-
+        guid_to_layer = {}
         if self._tree and self._tree.root:
             layer_map = {}
             for node in self._tree.root.children:
@@ -105,23 +94,37 @@ class Session:
                     continue
                 layer_idx = layer_map[node.name]
                 for desc in node.traverse():
-                    for rhino_guid in guid_map.get(desc.name, []):
-                        obj = doc.Objects.Find(rhino_guid)
-                        if obj is None:
-                            continue
-                        attr = obj.Attributes
-                        attr.LayerIndex = layer_idx
-                        doc.Objects.ModifyAttributes(rhino_guid, attr, True)
-            for node in self._tree.nodes:
-                if not node.children or node.name not in self._lookup:
+                    guid_to_layer[desc.name] = layer_idx
+
+        guid_map = {}
+        new_guids = []
+        record = doc.BeginUndoRecord("Session")
+        Rhino.RhinoApp.EnableRedraw(False)
+        try:
+            for obj, kwargs in self._scene:
+                type_name = type(obj).__name__
+                if type_name not in _MODULE_MAP:
                     continue
-                group_guids = list(guid_map.get(node.name, []))
-                for child in node.children:
-                    group_guids.extend(guid_map.get(child.name, []))
-                valid = [g for g in group_guids if g != System.Guid.Empty]
-                if len(valid) < 2:
-                    continue
-                doc.Groups.Add(valid)
+                module = _get_module(type_name)
+                layer_idx = guid_to_layer.get(getattr(obj, 'guid', None), 0)
+                rhino_guids = module.add(obj, layer_idx=layer_idx, **kwargs)
+                if hasattr(obj, "guid"):
+                    guid_map[obj.guid] = rhino_guids
+                new_guids.extend(str(g) for g in rhino_guids)
+
+            if self._tree and self._tree.root:
+                for node in self._tree.nodes:
+                    if not node.children or node.name not in self._lookup:
+                        continue
+                    group_guids = list(guid_map.get(node.name, []))
+                    for child in node.children:
+                        group_guids.extend(guid_map.get(child.name, []))
+                    valid = [g for g in group_guids if g != System.Guid.Empty]
+                    if len(valid) >= 2:
+                        doc.Groups.Add(valid)
+        finally:
+            Rhino.RhinoApp.EnableRedraw(True)
+            doc.EndUndoRecord(record)
 
         self._scene.clear()
         if delete:

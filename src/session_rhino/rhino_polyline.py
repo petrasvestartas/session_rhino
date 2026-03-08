@@ -9,25 +9,7 @@ def to_rhino(pl):
     return Rhino.Geometry.PolylineCurve(pts)
 
 
-def _apply_attributes(doc, guid, pl):
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    attr = obj.Attributes
-    changed = False
-    if pl.linecolor is not None:
-        attr.ObjectColor = System.Drawing.Color.FromArgb(pl.linecolor.a, pl.linecolor.r, pl.linecolor.g, pl.linecolor.b)
-        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        changed = True
-    if pl.width > 0 and pl.width != 1.0:
-        attr.PlotWeight = pl.width
-        attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
-        changed = True
-    if changed:
-        doc.Objects.ModifyAttributes(guid, attr, True)
-
-
-def add(obj_or_list, **kwargs):
+def add(obj_or_list, layer_idx=0, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
@@ -36,10 +18,16 @@ def add(obj_or_list, **kwargs):
         rpl = to_rhino(pl)
         if rpl is None or not rpl.IsValid:
             continue
-        guid = doc.Objects.AddCurve(rpl)
+        attr = Rhino.DocObjects.ObjectAttributes()
+        attr.LayerIndex = layer_idx
+        if pl.linecolor is not None:
+            attr.ObjectColor = System.Drawing.Color.FromArgb(pl.linecolor.a, pl.linecolor.r, pl.linecolor.g, pl.linecolor.b)
+            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        if pl.width > 0 and pl.width != 1.0:
+            attr.PlotWeight = pl.width
+            attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
+        guid = doc.Objects.AddCurve(rpl, attr)
         if guid == System.Guid.Empty:
             continue
-        _apply_attributes(doc, guid, pl)
         guids.append(guid)
-    doc.Views.Redraw()
     return guids

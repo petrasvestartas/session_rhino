@@ -221,49 +221,16 @@ def to_rhino(mesh):
     return rmesh
 
 
-def _apply_attributes(doc, guid, mesh, apply_object_color=False):
-    if not apply_object_color:
-        return
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    from session_py.mesh import ColorMode
-    mode = mesh.color_mode
-    attr = obj.Attributes
-    attr.Name = mesh.name
-    color = None
-    if mode == ColorMode.NONE:
-        pass
-    elif mode == ColorMode.POINTCOLORS:
-        color = next((c for c in mesh.pointcolors if _is_colored([c])), None)
-    elif mode == ColorMode.FACECOLORS:
-        color = next((c for c in mesh.facecolors if _is_colored([c])), None)
-    else:
-        color = mesh.objectcolor if _is_colored([mesh.objectcolor]) else None
-    if color is not None:
-        attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
-        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-    doc.Objects.ModifyAttributes(guid, attr, True)
-
-
 def _delete_by_session_guid(doc, session_guid):
     ids = [obj.Id for obj in doc.Objects if obj.Attributes.GetUserString("session_guid") == session_guid]
     for oid in ids:
         doc.Objects.Delete(oid, True)
 
 
-def _tag_session_guid(doc, guid, session_guid):
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    attr = obj.Attributes
-    attr.SetUserString("session_guid", session_guid)
-    doc.Objects.ModifyAttributes(guid, attr, True)
-
-
-def add(obj_or_list, **kwargs):
+def add(obj_or_list, layer_idx=0, **kwargs):
     from session_py.primitives import Primitives
     from session_py.line import Line
+    from session_py.mesh import ColorMode
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     doc = Rhino.RhinoDoc.ActiveDoc
@@ -277,11 +244,23 @@ def add(obj_or_list, **kwargs):
         rmeshes = [to_rhino(obj_or_list[0])]
     guids = []
     for mesh, rmesh in zip(obj_or_list, rmeshes):
-        guid = doc.Objects.AddMesh(rmesh)
-        if guid != System.Guid.Empty:
-            _apply_attributes(doc, guid, mesh, apply_object_color=True)
-            if mesh.guid:
-                _tag_session_guid(doc, guid, mesh.guid)
+        attr = Rhino.DocObjects.ObjectAttributes()
+        attr.LayerIndex = layer_idx
+        attr.Name = mesh.name
+        if mesh.guid:
+            attr.SetUserString("session_guid", mesh.guid)
+        mode = mesh.color_mode
+        color = None
+        if mode == ColorMode.POINTCOLORS:
+            color = next((c for c in mesh.pointcolors if _is_colored([c])), None)
+        elif mode == ColorMode.FACECOLORS:
+            color = next((c for c in mesh.facecolors if _is_colored([c])), None)
+        elif mode != ColorMode.NONE:
+            color = mesh.objectcolor if _is_colored([mesh.objectcolor]) else None
+        if color is not None:
+            attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
+            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        guid = doc.Objects.AddMesh(rmesh, attr)
         guids.append(guid)
         pipe_guids = []
         edges = mesh.edges()
@@ -296,19 +275,15 @@ def add(obj_or_list, **kwargs):
             pipe = Primitives.capsule_mesh(line, w)
             pipe.set_facecolors([lc] * pipe.number_of_faces())
             rpipe = to_rhino(pipe)
-            pipe_guid = doc.Objects.AddMesh(rpipe)
+            pipe_attr = Rhino.DocObjects.ObjectAttributes()
+            pipe_attr.LayerIndex = layer_idx
+            if mesh.guid:
+                pipe_attr.SetUserString("session_guid", mesh.guid)
+            pipe_attr.ObjectColor = System.Drawing.Color.FromArgb(lc[3], lc[0], lc[1], lc[2])
+            pipe_attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+            pipe_guid = doc.Objects.AddMesh(rpipe, pipe_attr)
             if pipe_guid != System.Guid.Empty:
-                _apply_attributes(doc, pipe_guid, pipe, apply_object_color=True)
-                if mesh.guid:
-                    _tag_session_guid(doc, pipe_guid, mesh.guid)
                 pipe_guids.append(pipe_guid)
         if pipe_guids and guid != System.Guid.Empty:
-            group_idx = doc.Groups.Add()
-            for g in [guid] + pipe_guids:
-                obj = doc.Objects.Find(g)
-                if obj is not None:
-                    attr = obj.Attributes
-                    attr.AddToGroup(group_idx)
-                    doc.Objects.ModifyAttributes(g, attr, True)
-    doc.Views.Redraw()
+            doc.Groups.Add([guid] + pipe_guids)
     return guids

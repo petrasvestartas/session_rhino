@@ -21,30 +21,7 @@ def to_rhino(crv):
     return nc
 
 
-def _apply_attributes(doc, guid, crv):
-    obj = doc.Objects.Find(guid)
-    if obj is None:
-        return
-    attr = obj.Attributes
-    changed = False
-    color = None
-    if len(crv.linecolors) > 0:
-        color = crv.linecolors[0]
-    elif len(crv.pointcolors) > 0:
-        color = crv.pointcolors[0]
-    if color is not None:
-        attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
-        attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-        changed = True
-    if crv.width > 0 and crv.width != 1.0:
-        attr.PlotWeight = crv.width
-        attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
-        changed = True
-    if changed:
-        doc.Objects.ModifyAttributes(guid, attr, True)
-
-
-def add(obj_or_list, **kwargs):
+def add(obj_or_list, layer_idx=0, **kwargs):
     if not isinstance(obj_or_list, list):
         obj_or_list = [obj_or_list]
     guids = []
@@ -53,10 +30,21 @@ def add(obj_or_list, **kwargs):
         rcrv = to_rhino(crv)
         if rcrv is None or not rcrv.IsValid:
             continue
-        guid = doc.Objects.AddCurve(rcrv)
+        attr = Rhino.DocObjects.ObjectAttributes()
+        attr.LayerIndex = layer_idx
+        color = None
+        if len(crv.linecolors) > 0:
+            color = crv.linecolors[0]
+        elif len(crv.pointcolors) > 0:
+            color = crv.pointcolors[0]
+        if color is not None:
+            attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
+            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        if crv.width > 0 and crv.width != 1.0:
+            attr.PlotWeight = crv.width
+            attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
+        guid = doc.Objects.AddCurve(rcrv, attr)
         if guid == System.Guid.Empty:
             continue
-        _apply_attributes(doc, guid, crv)
         guids.append(guid)
-    doc.Views.Redraw()
     return guids
