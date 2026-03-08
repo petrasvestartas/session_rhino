@@ -76,7 +76,9 @@ def _to_rhino_face_colors(mesh):
         stored = mesh.triangulation.get(fk)
         if stored is not None and len(stored) > 0:
             if n == 3:
-                rmesh.Faces.AddFace(base, base + 1, base + 2)
+                vk_to_local = {vk: j for j, vk in enumerate(vks)}
+                t = stored[0]
+                rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
                 f_offset += 1
             elif n == 4:

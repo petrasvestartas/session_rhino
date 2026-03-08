@@ -71,9 +71,7 @@ class Session:
 
     def draw(self, delete=True):
         doc = Rhino.RhinoDoc.ActiveDoc
-        if delete:
-            for guid_str in _load_guids():
-                doc.Objects.Delete(System.Guid(guid_str), True)
+        old_guids = _load_guids() if delete else []
 
         guid_to_layer = {}
         if self._tree and self._tree.root:
@@ -99,8 +97,10 @@ class Session:
         guid_map = {}
         new_guids = []
         record = doc.BeginUndoRecord("Session")
-        Rhino.RhinoApp.EnableRedraw(False)
+        doc.Views.EnableRedraw(False, False, False)
         try:
+            for guid_str in old_guids:
+                doc.Objects.Delete(System.Guid(guid_str), True)
             for obj, kwargs in self._scene:
                 type_name = type(obj).__name__
                 if type_name not in _MODULE_MAP:
@@ -123,14 +123,14 @@ class Session:
                     if len(valid) >= 2:
                         doc.Groups.Add(valid)
         finally:
-            Rhino.RhinoApp.EnableRedraw(True)
+            doc.Views.EnableRedraw(True, False, False)
             doc.EndUndoRecord(record)
 
         self._scene.clear()
         if delete:
             _save_guids(new_guids)
         else:
-            _save_guids(_load_guids() + new_guids)
+            _save_guids(old_guids + new_guids)
         doc.Views.Redraw()
         return new_guids
 
