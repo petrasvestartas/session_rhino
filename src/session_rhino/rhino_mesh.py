@@ -1,9 +1,48 @@
+import math
+
 import Rhino
 import System
 
 
 def _is_colored(colors):
     return any(c[0] != 255 or c[1] != 255 or c[2] != 255 for c in colors)
+
+
+def _project_to_2d(pts3d):
+    n = len(pts3d)
+    nx = ny = nz = 0.0
+    for i in range(n):
+        a = pts3d[i]
+        b = pts3d[(i + 1) % n]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    mag = math.sqrt(nx*nx + ny*ny + nz*nz)
+    if mag < 1e-12:
+        return [(p[0], p[1]) for p in pts3d]
+    nx /= mag; ny /= mag; nz /= mag
+    if abs(nx) < 0.9:
+        ax, ay, az = 1.0, 0.0, 0.0
+    else:
+        ax, ay, az = 0.0, 1.0, 0.0
+    dot = ax*nx + ay*ny + az*nz
+    ux = ax - dot*nx; uy = ay - dot*ny; uz = az - dot*nz
+    um = math.sqrt(ux*ux + uy*uy + uz*uz)
+    ux /= um; uy /= um; uz /= um
+    vx = ny*uz - nz*uy
+    vy = nz*ux - nx*uz
+    vz = nx*uy - ny*ux
+    return [(p[0]*ux + p[1]*uy + p[2]*uz, p[0]*vx + p[1]*vy + p[2]*vz) for p in pts3d]
+
+
+def _ngon(verts, faces):
+    av = System.Array.CreateInstance(System.Int32, len(verts))
+    af = System.Array.CreateInstance(System.Int32, len(faces))
+    for i, v in enumerate(verts):
+        av[i] = int(v)
+    for i, f in enumerate(faces):
+        af[i] = int(f)
+    return Rhino.Geometry.MeshNgon.Create(av, af)
 
 
 def _to_rhino_face_colors(mesh):
@@ -21,34 +60,51 @@ def _to_rhino_face_colors(mesh):
             if fc is not None:
                 rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
         stored = mesh.triangulation.get(fk)
-        if stored is not None and len(stored) > 0:
-            vk_to_local = {vk: j for j, vk in enumerate(vks)}
-            start_fi = f_offset
-            for t in stored:
-                rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
+        if stored is not None and len(stored) >= n - 2:
+            if n == 3:
+                rmesh.Faces.AddFace(base, base + 1, base + 2)
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
                 f_offset += 1
-            if n >= 5:
-                ngon_verts = list(range(base, base + n))
-                ngon_faces = list(range(start_fi, f_offset))
-                rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+            elif n == 4:
+                vk_to_local = {vk: j for j, vk in enumerate(vks)}
+                start_fi = f_offset
+                for t in stored:
+                    rmesh.Faces.AddFace(
+                        base + vk_to_local[t[0]],
+                        base + vk_to_local[t[1]],
+                        base + vk_to_local[t[2]],
+                    )
+                    f_offset += 1
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), range(start_fi, f_offset)))
+            else:
+                vk_to_local = {vk: j for j, vk in enumerate(vks)}
+                start_fi = f_offset
+                for t in stored:
+                    rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
+                    f_offset += 1
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Faces.AddFace(base, base + 1, base + 2)
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
-                list(range(base, base + 3)), [f_offset]))
+            rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
             f_offset += 1
         elif n == 4:
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(
-                list(range(base, base + 4)), [f_offset]))
+            rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
+            from session_py.trimesh_cdt import cdt_triangulate as _cdt
             start_fi = f_offset
-            for i in range(1, n - 1):
-                rmesh.Faces.AddFace(base, base + i, base + i + 1)
-                f_offset += 1
-            ngon_verts = list(range(base, base + n))
-            ngon_faces = list(range(start_fi, f_offset))
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+            pts3d = [mesh.vertex[vk].position() for vk in vks]
+            cdt_tris = _cdt(_project_to_2d(pts3d))
+            if cdt_tris:
+                for t in cdt_tris:
+                    rmesh.Faces.AddFace(base + t[0], base + t[1], base + t[2])
+                    f_offset += 1
+            else:
+                for i in range(1, n - 1):
+                    rmesh.Faces.AddFace(base, base + i, base + i + 1)
+                    f_offset += 1
+            rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
     if rmesh.Ngons.Count > 0:
         rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -82,15 +138,22 @@ def to_rhino(mesh):
         n = len(f)
         fk = face_keys[fi] if fi < len(face_keys) else None
         stored = mesh.triangulation.get(fk) if fk is not None else None
-        if stored is not None and len(stored) > 0:
-            start_fi = f_offset
-            for t in stored:
-                rmesh.Faces.AddFace(vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]])
+        if stored is not None and len(stored) >= n - 2:
+            if n == 3:
+                rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
                 f_offset += 1
-            if n >= 5:
-                ngon_verts = [int(x) for x in f]
-                ngon_faces = list(range(start_fi, f_offset))
-                rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+            elif n == 4:
+                start_fi = f_offset
+                for t in stored:
+                    rmesh.Faces.AddFace(vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]])
+                    f_offset += 1
+                rmesh.Ngons.AddNgon(_ngon(f, range(start_fi, f_offset)))
+            else:
+                start_fi = f_offset
+                for t in stored:
+                    rmesh.Faces.AddFace(vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]])
+                    f_offset += 1
+                rmesh.Ngons.AddNgon(_ngon(f, range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
             f_offset += 1
@@ -98,13 +161,19 @@ def to_rhino(mesh):
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]), int(f[3]))
             f_offset += 1
         else:
+            from session_py.trimesh_cdt import cdt_triangulate as _cdt
             start_fi = f_offset
-            for i in range(1, n - 1):
-                rmesh.Faces.AddFace(int(f[0]), int(f[i]), int(f[i + 1]))
-                f_offset += 1
-            ngon_verts = [int(x) for x in f]
-            ngon_faces = list(range(start_fi, f_offset))
-            rmesh.Ngons.AddNgon(Rhino.Geometry.MeshNgon.Create(ngon_verts, ngon_faces))
+            pts3d = [verts[int(idx)] for idx in f]
+            cdt_tris = _cdt(_project_to_2d(pts3d))
+            if cdt_tris:
+                for t in cdt_tris:
+                    rmesh.Faces.AddFace(int(f[t[0]]), int(f[t[1]]), int(f[t[2]]))
+                    f_offset += 1
+            else:
+                for i in range(1, n - 1):
+                    rmesh.Faces.AddFace(int(f[0]), int(f[i]), int(f[i + 1]))
+                    f_offset += 1
+            rmesh.Ngons.AddNgon(_ngon(f, range(start_fi, f_offset)))
 
     if use_vc and len(mesh.pointcolors) == len(verts):
         for c in mesh.pointcolors:
@@ -113,6 +182,8 @@ def to_rhino(mesh):
     if any_lc and not use_fc and not use_vc:
         rmesh.Weld(3.14159265358979)
 
+    if rmesh.Ngons.Count > 0:
+        rmesh.UnifyNormals()
     rmesh.Compact()
     rmesh.FaceNormals.ComputeFaceNormals()
     rmesh.Normals.ComputeNormals()
