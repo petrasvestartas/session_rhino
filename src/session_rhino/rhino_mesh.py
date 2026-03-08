@@ -60,7 +60,7 @@ def _to_rhino_face_colors(mesh):
             if fc is not None:
                 rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
         stored = mesh.triangulation.get(fk)
-        if stored is not None and len(stored) >= n - 2:
+        if stored is not None and len(stored) > 0:
             if n == 3:
                 rmesh.Faces.AddFace(base, base + 1, base + 2)
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
@@ -77,12 +77,19 @@ def _to_rhino_face_colors(mesh):
                     f_offset += 1
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), range(start_fi, f_offset)))
             else:
-                vk_to_local = {vk: j for j, vk in enumerate(vks)}
+                hole_rings = mesh.face_holes.get(fk, [])
+                all_vks = list(vks) + [vk for ring in hole_rings for vk in ring]
+                for vk in all_vks[n:]:
+                    pt = mesh.vertex[vk].position()
+                    rmesh.Vertices.Add(float(pt[0]), float(pt[1]), float(pt[2]))
+                    if fc is not None:
+                        rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
+                vk_to_local = {vk: j for j, vk in enumerate(all_vks)}
                 start_fi = f_offset
                 for t in stored:
                     rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                     f_offset += 1
-                rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Faces.AddFace(base, base + 1, base + 2)
             rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
@@ -138,7 +145,7 @@ def to_rhino(mesh):
         n = len(f)
         fk = face_keys[fi] if fi < len(face_keys) else None
         stored = mesh.triangulation.get(fk) if fk is not None else None
-        if stored is not None and len(stored) >= n - 2:
+        if stored is not None and len(stored) > 0:
             if n == 3:
                 rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
                 f_offset += 1
@@ -153,7 +160,9 @@ def to_rhino(mesh):
                 for t in stored:
                     rmesh.Faces.AddFace(vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]])
                     f_offset += 1
-                rmesh.Ngons.AddNgon(_ngon(f, range(start_fi, f_offset)))
+                hole_rings = mesh.face_holes.get(fk, [])
+                ngon_boundary = list(f) + [vkey_to_idx[vk] for ring in hole_rings for vk in ring]
+                rmesh.Ngons.AddNgon(_ngon(ngon_boundary, range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Faces.AddFace(int(f[0]), int(f[1]), int(f[2]))
             f_offset += 1
@@ -186,7 +195,8 @@ def to_rhino(mesh):
         rmesh.UnifyNormals()
     rmesh.Compact()
     rmesh.FaceNormals.ComputeFaceNormals()
-    rmesh.Normals.ComputeNormals()
+    if rmesh.Ngons.Count == 0:
+        rmesh.Normals.ComputeNormals()
     return rmesh
 
 
