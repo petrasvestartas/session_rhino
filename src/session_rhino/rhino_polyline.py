@@ -2,6 +2,20 @@ import Rhino
 import System
 
 
+def from_rhino(rpl):
+    from session_py import Polyline as SPPolyline
+    from session_py.brep import _IDENTITY_XFORM, _ZERO_GUID
+    from session_py.plane import Plane
+    vertices = rpl.ToPolyline() if hasattr(rpl, 'ToPolyline') else rpl
+    pl = SPPolyline.__new__(SPPolyline)
+    pl.guid = _ZERO_GUID; pl.name = ""; pl.width = 1.0
+    pl.linecolor = None; pl.xform = _IDENTITY_XFORM; pl.plane = Plane()
+    pl._coords = []
+    for v in vertices:
+        pl._coords.extend([float(v.X), float(v.Y), float(v.Z)])
+    return pl
+
+
 def to_rhino(pl):
     pts = []
     for p in pl.get_points():
