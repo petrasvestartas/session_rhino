@@ -14,7 +14,7 @@ import Rhino
 import System
 
 filepath = r"C:\pc\3_code\code_rust\session\session_data\mesh_quad_tri_loft10_out.pb"
-# filepath = r"c:\pc\3_code\code_rust\session\session_data\mesh_recheck.pb"
+filepath = r"c:\pc\3_code\code_rust\session\session_data\mesh_recheck.pb"
 
 data = PySession.pb_load(filepath)
 meshes = list(data.objects.meshes)
