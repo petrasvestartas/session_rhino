@@ -63,7 +63,9 @@ def to_rhino(brep):
     """Convert session BRep to Rhino Brep with proper trim loops."""
     tol = Rhino.RhinoDoc.ActiveDoc.ModelAbsoluteTolerance
     face_breps = []
+    face_colors = []
     for face in brep.m_faces:
+        fc = face.facecolor
         si = face.surface_index
         if si < 0 or si >= len(brep.m_surfaces):
             continue
@@ -94,7 +96,9 @@ def to_rhino(brep):
             all_curves = outer_curves + inner_curves
             planar = Rhino.Geometry.Brep.CreatePlanarBreps(all_curves, tol)
             if planar and len(planar) > 0:
-                face_breps.extend(planar)
+                for pb in planar:
+                    face_breps.append(pb)
+                    face_colors.append(fc)
                 continue
 
         # Non-planar or no trims: use full surface
@@ -102,6 +106,11 @@ def to_rhino(brep):
         fb = Rhino.Geometry.Brep.CreateFromSurface(rsrf)
         if fb is not None:
             face_breps.append(fb)
+            face_colors.append(fc)
+
+    for fb, fc in zip(face_breps, face_colors):
+        if fc is not None:
+            fb.Faces[0].PerFaceColor = System.Drawing.Color.FromArgb(fc.a, fc.r, fc.g, fc.b)
 
     if len(face_breps) > 1:
         joined = Rhino.Geometry.Brep.JoinBreps(face_breps, tol)
