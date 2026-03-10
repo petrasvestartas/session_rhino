@@ -22,7 +22,7 @@ jobs:
           python-version: "3.11"
 
       - name: Set version
-        run: echo "VERSION=0.1.${{ github.run_number }}" >> $GITHUB_ENV
+        run: echo "VERSION=0.${{ github.run_number }}.0" >> $GITHUB_ENV
 
       - name: Patch pyproject.toml version
         run: sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
