@@ -65,14 +65,14 @@ def _to_rhino_face_colors(mesh):
     rmesh = Rhino.Geometry.Mesh()
     face_keys = sorted(mesh.face.keys())
     f_offset = 0
-    vc_list = []
     for fi, fk in enumerate(face_keys):
         vks = mesh.face[fk]
         n = len(vks)
         fc = mesh.facecolors[fi] if fi < len(mesh.facecolors) else (255, 255, 255)
         base = rmesh.Vertices.Count
         rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
-        vc_list.extend([fc] * n)
+        for _ in range(n):
+            rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
         stored = mesh.triangulation.get(fk)
         if stored is not None and len(stored) > 0:
             if n == 3:
@@ -98,7 +98,8 @@ def _to_rhino_face_colors(mesh):
                 all_vks = list(vks) + extra_vks
                 if extra_vks:
                     rmesh.Vertices.AddVertices(_pt3d_array(extra_vks, mesh.vertex))
-                    vc_list.extend([fc] * len(extra_vks))
+                    for _ in range(len(extra_vks)):
+                        rmesh.VertexColors.Add(int(fc[0]), int(fc[1]), int(fc[2]))
                 vk_to_local = {vk: j for j, vk in enumerate(all_vks)}
                 start_fi = f_offset
                 for t in stored:
@@ -127,8 +128,6 @@ def _to_rhino_face_colors(mesh):
                     rmesh.Faces.AddFace(base, base + i, base + i + 1)
                     f_offset += 1
             rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
-    if vc_list:
-        _set_vertex_colors(rmesh, vc_list)
     if rmesh.Ngons.Count > 0:
         rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -151,7 +150,6 @@ def to_rhino(mesh):
     face_keys = sorted(mesh.face.keys())
     vkey_to_seq = {vk: i for i, vk in enumerate(sorted(mesh.vertex.keys()))}
     f_offset = 0
-    vc_list = []
 
     for fk in face_keys:
         vks = mesh.face[fk]
@@ -165,29 +163,34 @@ def to_rhino(mesh):
             if use_vc:
                 for vk in all_vks:
                     seq = vkey_to_seq[vk]
-                    vc_list.append(mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255))
+                    c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+                    rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             vk_to_local = {vk: j for j, vk in enumerate(all_vks)}
             start_fi = f_offset
             for t in stored:
                 rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                 f_offset += 1
-            if n > 3:
+            if n >= 3:
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
             if use_vc:
                 for vk in vks:
                     seq = vkey_to_seq[vk]
-                    vc_list.append(mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255))
+                    c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+                    rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             rmesh.Faces.AddFace(base, base + 1, base + 2)
+            rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
             f_offset += 1
         elif n == 4:
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
             if use_vc:
                 for vk in vks:
                     seq = vkey_to_seq[vk]
-                    vc_list.append(mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255))
+                    c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+                    rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
+            rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
             from session_py.trimesh_cdt import cdt_triangulate as _cdt
@@ -195,7 +198,8 @@ def to_rhino(mesh):
             if use_vc:
                 for vk in vks:
                     seq = vkey_to_seq[vk]
-                    vc_list.append(mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255))
+                    c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+                    rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             pts3d = [mesh.vertex[vk].position() for vk in vks]
             cdt_tris = _cdt(_project_to_2d(pts3d))
             start_fi = f_offset
@@ -208,9 +212,6 @@ def to_rhino(mesh):
                     rmesh.Faces.AddFace(base, base + i, base + i + 1)
                     f_offset += 1
             rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
-
-    if use_vc and vc_list:
-        _set_vertex_colors(rmesh, vc_list)
 
     if any_lc and not use_vc:
         rmesh.Weld(3.14159265358979)
@@ -255,9 +256,7 @@ def add(obj_or_list, layer_idx=0, **kwargs):
         color = None
         if mode == ColorMode.POINTCOLORS:
             color = next((c for c in mesh.pointcolors if _is_colored([c])), None)
-        elif mode == ColorMode.FACECOLORS:
-            color = next((c for c in mesh.facecolors if _is_colored([c])), None)
-        elif mode != ColorMode.NONE:
+        elif mode == ColorMode.OBJECTCOLOR:
             color = mesh.objectcolor if _is_colored([mesh.objectcolor]) else None
         if color is not None:
             attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])

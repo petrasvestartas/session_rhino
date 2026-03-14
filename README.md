@@ -5,6 +5,12 @@ RhinoCommon converters for `session_py` geometry. Runs inside Rhino 8 Python 3.
 ## Install
 
 ```bash
+pip install session-rhino
+```
+
+Or for local development inside Rhino:
+
+```bash
 ./rhino.sh
 ```
 
@@ -44,8 +50,11 @@ session.draw(delete=True)
 | `rhino_point` | Point | Point3d |
 | `rhino_line` | Line | Line |
 | `rhino_plane` | Plane | Plane |
+| `rhino_polyline` | Polyline | Polyline |
 | `rhino_mesh` | Mesh | Mesh |
 | `rhino_nurbscurve` | NurbsCurve | NurbsCurve |
+| `rhino_nurbssurface` | NurbsSurface | NurbsSurface |
+| `rhino_brep` | — | Brep |
 
 ## Hot reload
 
