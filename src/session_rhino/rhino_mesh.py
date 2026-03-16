@@ -128,8 +128,8 @@ def _to_rhino_face_colors(mesh):
                     rmesh.Faces.AddFace(base, base + i, base + i + 1)
                     f_offset += 1
             rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
-    if rmesh.Ngons.Count > 0:
-        rmesh.UnifyNormals()
+    # if rmesh.Ngons.Count > 0:
+    #     rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
     rmesh.Normals.ComputeNormals()
     return rmesh
@@ -216,8 +216,8 @@ def to_rhino(mesh):
     if any_lc and not use_vc:
         rmesh.Weld(3.14159265358979)
 
-    if rmesh.Ngons.Count > 0:
-        rmesh.UnifyNormals()
+    # if rmesh.Ngons.Count > 0:
+    #     rmesh.UnifyNormals()
     rmesh.Compact()
     rmesh.FaceNormals.ComputeFaceNormals()
     rmesh.Normals.ComputeNormals()
