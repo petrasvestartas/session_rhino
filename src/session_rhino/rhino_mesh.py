@@ -135,8 +135,39 @@ def _to_rhino_face_colors(mesh):
     return rmesh
 
 
+def _to_rhino_welded_tri(mesh):
+    from session_py.mesh import ColorMode
+    rmesh = Rhino.Geometry.Mesh()
+    sorted_vkeys = sorted(mesh.vertex.keys())
+    vkey_to_idx = {vk: i for i, vk in enumerate(sorted_vkeys)}
+    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(sorted_vkeys))
+    for i, vk in enumerate(sorted_vkeys):
+        vd = mesh.vertex[vk]
+        arr[i] = Rhino.Geometry.Point3d(vd[0], vd[1], vd[2])
+    rmesh.Vertices.AddVertices(arr)
+    use_vc = mesh.color_mode == ColorMode.POINTCOLORS
+    if use_vc and mesh.pointcolors:
+        carr = System.Array.CreateInstance(System.Drawing.Color, len(sorted_vkeys))
+        for i, vk in enumerate(sorted_vkeys):
+            seq = vkey_to_idx[vk]
+            c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+            carr[i] = System.Drawing.Color.FromArgb(255, int(c[0]), int(c[1]), int(c[2]))
+        rmesh.VertexColors.SetColors(carr)
+    sorted_fkeys = sorted(mesh.face.keys())
+    farr = System.Array.CreateInstance(Rhino.Geometry.MeshFace, len(sorted_fkeys))
+    for i, fk in enumerate(sorted_fkeys):
+        v0, v1, v2 = mesh.face[fk]
+        farr[i] = Rhino.Geometry.MeshFace(vkey_to_idx[v0], vkey_to_idx[v1], vkey_to_idx[v2])
+    rmesh.Faces.AddFaces(farr)
+    rmesh.Compact()
+    rmesh.FaceNormals.ComputeFaceNormals()
+    rmesh.Normals.ComputeNormals()
+    return rmesh
+
+
 def to_rhino(mesh):
     from session_py.mesh import ColorMode
+    from session_py.session_config import SESSION_CONFIG
     mode = mesh.color_mode
     any_lc = _is_colored(mesh.linecolors)
 
@@ -145,6 +176,13 @@ def to_rhino(mesh):
 
     if use_fc:
         return _to_rhino_face_colors(mesh)
+
+    if (not SESSION_CONFIG.explode_mesh_faces
+            and not mesh.triangulation
+            and not mesh.face_holes
+            and mesh.face
+            and all(len(v) == 3 for v in mesh.face.values())):
+        return _to_rhino_welded_tri(mesh)
 
     rmesh = Rhino.Geometry.Mesh()
     face_keys = sorted(mesh.face.keys())
@@ -180,7 +218,6 @@ def to_rhino(mesh):
                     c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
                     rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             rmesh.Faces.AddFace(base, base + 1, base + 2)
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
             f_offset += 1
         elif n == 4:
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
@@ -190,7 +227,6 @@ def to_rhino(mesh):
                     c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
                     rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
             from session_py.trimesh_cdt import cdt_triangulate as _cdt
@@ -264,27 +300,27 @@ def add(obj_or_list, layer_idx=0, **kwargs):
         guid = doc.Objects.AddMesh(rmesh, attr)
         guids.append(guid)
         pipe_guids = []
-        edges = mesh.edges()
-        for i, (u, v) in enumerate(edges):
-            lc = mesh.linecolors[i] if i < len(mesh.linecolors) else None
-            if lc is None or not _is_colored([lc]):
-                continue
-            w = mesh.widths[i] if i < len(mesh.widths) else 1.0
-            start = mesh.vertex[u].position()
-            end = mesh.vertex[v].position()
-            line = Line(start[0], start[1], start[2], end[0], end[1], end[2])
-            pipe = Primitives.capsule_mesh(line, w)
-            pipe.set_facecolors([lc] * pipe.number_of_faces())
-            rpipe = to_rhino(pipe)
-            pipe_attr = Rhino.DocObjects.ObjectAttributes()
-            pipe_attr.LayerIndex = layer_idx
-            if mesh.guid:
-                pipe_attr.SetUserString("session_guid", mesh.guid)
-            pipe_attr.ObjectColor = System.Drawing.Color.FromArgb(lc[3], lc[0], lc[1], lc[2])
-            pipe_attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
-            pipe_guid = doc.Objects.AddMesh(rpipe, pipe_attr)
-            if pipe_guid != System.Guid.Empty:
-                pipe_guids.append(pipe_guid)
+        if mesh.linecolors and _is_colored(mesh.linecolors):
+            for i, (u, v) in enumerate(mesh.edges()):
+                lc = mesh.linecolors[i] if i < len(mesh.linecolors) else None
+                if lc is None or not _is_colored([lc]):
+                    continue
+                w = mesh.widths[i] if i < len(mesh.widths) else 1.0
+                start = mesh.vertex[u].position()
+                end = mesh.vertex[v].position()
+                line = Line(start[0], start[1], start[2], end[0], end[1], end[2])
+                pipe = Primitives.capsule_mesh(line, w)
+                pipe.set_facecolors([lc] * pipe.number_of_faces())
+                rpipe = to_rhino(pipe)
+                pipe_attr = Rhino.DocObjects.ObjectAttributes()
+                pipe_attr.LayerIndex = layer_idx
+                if mesh.guid:
+                    pipe_attr.SetUserString("session_guid", mesh.guid)
+                pipe_attr.ObjectColor = System.Drawing.Color.FromArgb(lc[3], lc[0], lc[1], lc[2])
+                pipe_attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+                pipe_guid = doc.Objects.AddMesh(rpipe, pipe_attr)
+                if pipe_guid != System.Guid.Empty:
+                    pipe_guids.append(pipe_guid)
         if pipe_guids and guid != System.Guid.Empty:
             doc.Groups.Add([guid] + pipe_guids)
     return guids

@@ -13,7 +13,7 @@ from session_rhino.rhino_mesh import to_rhino
 import Rhino
 import System
 
-filepath = r"c:\pc\3_code\code_rust\session\session_data\loft_debug.pb"
+filepath = r"C:\pc\3_code\code_rust\session\session_data\isomesh_demo.pb"
 
 data = PySession.pb_load(filepath)
 meshes = list(data.objects.meshes)
