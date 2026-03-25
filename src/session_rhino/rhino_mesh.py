@@ -115,7 +115,7 @@ def _to_rhino_face_colors(mesh):
             rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
-            from session_py.trimesh_cdt import cdt_triangulate as _cdt
+            from session_py.remesh_cdt import cdt_triangulate as _cdt
             start_fi = f_offset
             pts3d = [mesh.vertex[vk].position() for vk in vks]
             cdt_tris = _cdt(_project_to_2d(pts3d))
@@ -139,25 +139,46 @@ def _to_rhino_welded_tri(mesh):
     from session_py.mesh import ColorMode
     rmesh = Rhino.Geometry.Mesh()
     sorted_vkeys = sorted(mesh.vertex.keys())
-    vkey_to_idx = {vk: i for i, vk in enumerate(sorted_vkeys)}
-    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(sorted_vkeys))
-    for i, vk in enumerate(sorted_vkeys):
+    vkey_to_seq = {vk: i for i, vk in enumerate(sorted_vkeys)}
+    # Deduplicate by exact position — merges coincident vertices (e.g. pole singularities)
+    pos_to_rhino_idx = {}
+    unique_vkeys = []
+    vkey_to_idx = {}
+    for vk in sorted_vkeys:
+        vd = mesh.vertex[vk]
+        pos = (vd[0], vd[1], vd[2])
+        if pos not in pos_to_rhino_idx:
+            pos_to_rhino_idx[pos] = len(unique_vkeys)
+            unique_vkeys.append(vk)
+        vkey_to_idx[vk] = pos_to_rhino_idx[pos]
+    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(unique_vkeys))
+    for i, vk in enumerate(unique_vkeys):
         vd = mesh.vertex[vk]
         arr[i] = Rhino.Geometry.Point3d(vd[0], vd[1], vd[2])
     rmesh.Vertices.AddVertices(arr)
     use_vc = mesh.color_mode == ColorMode.POINTCOLORS
     if use_vc and mesh.pointcolors:
-        carr = System.Array.CreateInstance(System.Drawing.Color, len(sorted_vkeys))
-        for i, vk in enumerate(sorted_vkeys):
-            seq = vkey_to_idx[vk]
+        carr = System.Array.CreateInstance(System.Drawing.Color, len(unique_vkeys))
+        for i, vk in enumerate(unique_vkeys):
+            seq = vkey_to_seq[vk]
             c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
             carr[i] = System.Drawing.Color.FromArgb(255, int(c[0]), int(c[1]), int(c[2]))
         rmesh.VertexColors.SetColors(carr)
     sorted_fkeys = sorted(mesh.face.keys())
-    farr = System.Array.CreateInstance(Rhino.Geometry.MeshFace, len(sorted_fkeys))
-    for i, fk in enumerate(sorted_fkeys):
+    valid_faces = []
+    degen_count = 0
+    for fk in sorted_fkeys:
         v0, v1, v2 = mesh.face[fk]
-        farr[i] = Rhino.Geometry.MeshFace(vkey_to_idx[v0], vkey_to_idx[v1], vkey_to_idx[v2])
+        i0, i1, i2 = vkey_to_idx[v0], vkey_to_idx[v1], vkey_to_idx[v2]
+        if i0 == i1 or i1 == i2 or i0 == i2:
+            degen_count += 1
+            continue
+        valid_faces.append(Rhino.Geometry.MeshFace(i0, i1, i2))
+    if degen_count:
+        print(f"  skipped {degen_count} degenerate faces")
+    farr = System.Array.CreateInstance(Rhino.Geometry.MeshFace, len(valid_faces))
+    for i, f in enumerate(valid_faces):
+        farr[i] = f
     rmesh.Faces.AddFaces(farr)
     rmesh.Compact()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -229,7 +250,7 @@ def to_rhino(mesh):
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
             f_offset += 1
         else:
-            from session_py.trimesh_cdt import cdt_triangulate as _cdt
+            from session_py.remesh_cdt import cdt_triangulate as _cdt
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
             if use_vc:
                 for vk in vks:
@@ -297,6 +318,10 @@ def add(obj_or_list, layer_idx=0, **kwargs):
         if color is not None:
             attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
             attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+        valid, log = rmesh.IsValidWithLog()
+        print(f"mesh '{mesh.name}': rhino valid={valid} verts={rmesh.Vertices.Count} faces={rmesh.Faces.Count}")
+        if not valid:
+            print(f"  reason: {log.strip()}")
         guid = doc.Objects.AddMesh(rmesh, attr)
         guids.append(guid)
         pipe_guids = []
