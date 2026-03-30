@@ -14,7 +14,7 @@ from session_rhino.rhino_mesh import to_rhino
 import Rhino
 import System
 
-filepath = r"C:\brg\code_rust\session\session_cpp\bool_intersect.pb"
+filepath = r"C:\brg\code_rust\session\session_cpp\bool_all.pb"
 
 data = PySession.pb_load(filepath)
 meshes = list(data.objects.meshes)
