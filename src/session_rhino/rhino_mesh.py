@@ -62,6 +62,7 @@ def _set_vertex_colors(rmesh, vc_list):
 
 
 def _to_rhino_face_colors(mesh):
+    from session_py.session_config import SESSION_CONFIG
     rmesh = Rhino.Geometry.Mesh()
     face_keys = sorted(mesh.face.keys())
     f_offset = 0
@@ -79,7 +80,8 @@ def _to_rhino_face_colors(mesh):
                 vk_to_local = {vk: j for j, vk in enumerate(vks)}
                 t = stored[0]
                 rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
-                rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
+                if not SESSION_CONFIG.explode_mesh_faces:
+                    rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
                 f_offset += 1
             elif n == 4:
                 vk_to_local = {vk: j for j, vk in enumerate(vks)}
@@ -91,7 +93,8 @@ def _to_rhino_face_colors(mesh):
                         base + vk_to_local[t[2]],
                     )
                     f_offset += 1
-                rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), range(start_fi, f_offset)))
+                if not SESSION_CONFIG.explode_mesh_faces:
+                    rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), range(start_fi, f_offset)))
             else:
                 hole_rings = mesh.face_holes.get(fk, [])
                 extra_vks = [vk for ring in hole_rings for vk in ring]
@@ -105,14 +108,17 @@ def _to_rhino_face_colors(mesh):
                 for t in stored:
                     rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                     f_offset += 1
-                rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
+                if not SESSION_CONFIG.explode_mesh_faces:
+                    rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Faces.AddFace(base, base + 1, base + 2)
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
+            if not SESSION_CONFIG.explode_mesh_faces:
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + 3), [f_offset]))
             f_offset += 1
         elif n == 4:
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
+            if not SESSION_CONFIG.explode_mesh_faces:
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
             from session_py.remesh_cdt import cdt_triangulate as _cdt
@@ -127,7 +133,8 @@ def _to_rhino_face_colors(mesh):
                 for i in range(1, n - 1):
                     rmesh.Faces.AddFace(base, base + i, base + i + 1)
                     f_offset += 1
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
+            if not SESSION_CONFIG.explode_mesh_faces:
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
     # if rmesh.Ngons.Count > 0:
     #     rmesh.UnifyNormals()
     rmesh.FaceNormals.ComputeFaceNormals()
@@ -229,7 +236,7 @@ def to_rhino(mesh):
             for t in stored:
                 rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                 f_offset += 1
-            if n >= 3:
+            if n >= 3 and not SESSION_CONFIG.explode_mesh_faces:
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
@@ -268,7 +275,8 @@ def to_rhino(mesh):
                 for i in range(1, n - 1):
                     rmesh.Faces.AddFace(base, base + i, base + i + 1)
                     f_offset += 1
-            rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
+            if not SESSION_CONFIG.explode_mesh_faces:
+                rmesh.Ngons.AddNgon(_ngon(range(base, base + n), range(start_fi, f_offset)))
 
     if any_lc and not use_vc:
         rmesh.Weld(3.14159265358979)
