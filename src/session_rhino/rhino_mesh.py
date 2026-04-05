@@ -121,7 +121,7 @@ def _to_rhino_face_colors(mesh):
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + 4), [f_offset]))
             f_offset += 1
         else:
-            from session_py.remesh_cdt import cdt_triangulate as _cdt
+            from session_py.remesh_cdt import RemeshCDT; _cdt = RemeshCDT.triangulate
             start_fi = f_offset
             pts3d = [mesh.vertex[vk].position() for vk in vks]
             cdt_tris = _cdt(_project_to_2d(pts3d))
@@ -257,7 +257,7 @@ def to_rhino(mesh):
             rmesh.Faces.AddFace(base, base + 1, base + 2, base + 3)
             f_offset += 1
         else:
-            from session_py.remesh_cdt import cdt_triangulate as _cdt
+            from session_py.remesh_cdt import RemeshCDT; _cdt = RemeshCDT.triangulate
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
             if use_vc:
                 for vk in vks:
@@ -327,8 +327,8 @@ def add(obj_or_list, layer_idx=0, **kwargs):
             attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
             attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
         valid, log = rmesh.IsValidWithLog()
-        print(f"mesh '{mesh.name}': rhino valid={valid} verts={rmesh.Vertices.Count} faces={rmesh.Faces.Count}")
         if not valid:
+            print(f"mesh '{mesh.name}': INVALID verts={rmesh.Vertices.Count} faces={rmesh.Faces.Count}")
             print(f"  reason: {log.strip()}")
         guid = doc.Objects.AddMesh(rmesh, attr)
         guids.append(guid)
