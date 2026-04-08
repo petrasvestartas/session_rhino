@@ -187,9 +187,60 @@ def _to_rhino_welded_tri(mesh):
     for i, f in enumerate(valid_faces):
         farr[i] = f
     rmesh.Faces.AddFaces(farr)
-    rmesh.Compact()
-    rmesh.FaceNormals.ComputeFaceNormals()
-    rmesh.Normals.ComputeNormals()
+    return rmesh
+
+
+def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
+    """Fast welded path for meshes with stored triangulation. Shared vertices, optional ngon grouping."""
+    from session_py.mesh import ColorMode
+    rmesh = Rhino.Geometry.Mesh()
+    sorted_vkeys = sorted(mesh.vertex.keys())
+    vkey_to_seq = {vk: i for i, vk in enumerate(sorted_vkeys)}
+    pos_to_rhino_idx = {}
+    unique_vkeys = []
+    vkey_to_idx = {}
+    for vk in sorted_vkeys:
+        vd = mesh.vertex[vk]
+        pos = (vd[0], vd[1], vd[2])
+        if pos not in pos_to_rhino_idx:
+            pos_to_rhino_idx[pos] = len(unique_vkeys)
+            unique_vkeys.append(vk)
+        vkey_to_idx[vk] = pos_to_rhino_idx[pos]
+    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(unique_vkeys))
+    for i, vk in enumerate(unique_vkeys):
+        vd = mesh.vertex[vk]
+        arr[i] = Rhino.Geometry.Point3d(vd[0], vd[1], vd[2])
+    rmesh.Vertices.AddVertices(arr)
+    use_vc = mesh.color_mode == ColorMode.POINTCOLORS
+    if use_vc and mesh.pointcolors:
+        carr = System.Array.CreateInstance(System.Drawing.Color, len(unique_vkeys))
+        for i, vk in enumerate(unique_vkeys):
+            seq = vkey_to_seq[vk]
+            c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
+            carr[i] = System.Drawing.Color.FromArgb(255, int(c[0]), int(c[1]), int(c[2]))
+        rmesh.VertexColors.SetColors(carr)
+    sorted_fkeys = sorted(mesh.face.keys())
+    f_offset = 0
+    for fk in sorted_fkeys:
+        vks = mesh.face[fk]
+        stored = mesh.triangulation.get(fk)
+        if stored:
+            start_fi = f_offset
+            for t in stored:
+                i0, i1, i2 = vkey_to_idx[t[0]], vkey_to_idx[t[1]], vkey_to_idx[t[2]]
+                rmesh.Faces.AddFace(i0, i1, i2)
+                f_offset += 1
+            if add_ngons:
+                ngon_vis = [vkey_to_idx[vk] for vk in vks]
+                rmesh.Ngons.AddNgon(_ngon(ngon_vis, range(start_fi, f_offset)))
+        elif len(vks) == 3:
+            i0, i1, i2 = vkey_to_idx[vks[0]], vkey_to_idx[vks[1]], vkey_to_idx[vks[2]]
+            rmesh.Faces.AddFace(i0, i1, i2)
+            f_offset += 1
+        elif len(vks) == 4:
+            i0, i1, i2, i3 = vkey_to_idx[vks[0]], vkey_to_idx[vks[1]], vkey_to_idx[vks[2]], vkey_to_idx[vks[3]]
+            rmesh.Faces.AddFace(i0, i1, i2, i3)
+            f_offset += 1
     return rmesh
 
 
@@ -204,6 +255,14 @@ def to_rhino(mesh):
 
     if use_fc:
         return _to_rhino_face_colors(mesh)
+
+    if (not mesh.face_holes
+            and mesh.face
+            and all(len(v) <= 4 for v in mesh.face.values())
+            and mesh.triangulation):
+        if not SESSION_CONFIG.explode_mesh_faces:
+            # welded triangles, no ngons (smooth)
+            return _to_rhino_welded_with_ngons(mesh, add_ngons=False)
 
     if (not SESSION_CONFIG.explode_mesh_faces
             and not mesh.triangulation
@@ -236,7 +295,7 @@ def to_rhino(mesh):
             for t in stored:
                 rmesh.Faces.AddFace(base + vk_to_local[t[0]], base + vk_to_local[t[1]], base + vk_to_local[t[2]])
                 f_offset += 1
-            if n >= 3 and not SESSION_CONFIG.explode_mesh_faces:
+            if n >= 3:
                 rmesh.Ngons.AddNgon(_ngon(range(base, base + len(all_vks)), range(start_fi, f_offset)))
         elif n == 3:
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
@@ -283,9 +342,6 @@ def to_rhino(mesh):
 
     # if rmesh.Ngons.Count > 0:
     #     rmesh.UnifyNormals()
-    rmesh.Compact()
-    rmesh.FaceNormals.ComputeFaceNormals()
-    rmesh.Normals.ComputeNormals()
     return rmesh
 
 

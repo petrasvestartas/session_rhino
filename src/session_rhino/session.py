@@ -73,66 +73,103 @@ class Session:
         doc = Rhino.RhinoDoc.ActiveDoc
         old_guids = _load_guids() if delete else []
 
+        # Build layer mapping from tree
         guid_to_layer = {}
+        layer_names = {}
         if self._tree and self._tree.root:
-            layer_map = {}
             for node in self._tree.root.children:
                 if node.name not in self._lookup:
-                    layer_idx = doc.Layers.FindByFullPath(node.name, -1)
-                    if layer_idx < 0:
-                        layer_obj = Rhino.DocObjects.Layer()
-                        layer_obj.Name = node.name
-                        if node.color is not None:
-                            layer_obj.Color = System.Drawing.Color.FromArgb(
-                                node.color[3], node.color[0], node.color[1], node.color[2])
-                        layer_idx = doc.Layers.Add(layer_obj)
-                    layer_map[node.name] = layer_idx
+                    layer_names[node.name] = node.color
             for node in self._tree.root.children:
-                if node.name not in layer_map:
+                if node.name not in layer_names:
                     continue
-                layer_idx = layer_map[node.name]
                 for desc in node.traverse():
-                    guid_to_layer[desc.name] = layer_idx
+                    guid_to_layer[desc.name] = node.name
 
-        guid_map = {}
-        new_guids = []
-        record = doc.BeginUndoRecord("Session")
+        # Build File3dm with all geometry
+        f3dm = Rhino.FileIO.File3dm()
+
+        # Create layers in File3dm
+        f3dm_layer_map = {}
+        for lname, lcolor in layer_names.items():
+            layer = Rhino.DocObjects.Layer()
+            layer.Name = lname
+            if lcolor is not None:
+                layer.Color = System.Drawing.Color.FromArgb(lcolor[3], lcolor[0], lcolor[1], lcolor[2])
+            f3dm.AllLayers.Add(layer)
+            f3dm_layer_map[lname] = f3dm.AllLayers.Count - 1
+
+        # Convert all objects and add to File3dm
+        _module_cache = {}
+        for obj, kwargs in self._scene:
+            type_name = type(obj).__name__
+            if type_name not in _MODULE_MAP:
+                continue
+            if type_name not in _module_cache:
+                _module_cache[type_name] = _get_module(type_name)
+            module = _module_cache[type_name]
+            rhino_geo = module.to_rhino(obj)
+            if rhino_geo is None:
+                continue
+            attr = Rhino.DocObjects.ObjectAttributes()
+            obj_guid = getattr(obj, 'guid', None)
+            layer_name = guid_to_layer.get(obj_guid)
+            if layer_name and layer_name in f3dm_layer_map:
+                attr.LayerIndex = f3dm_layer_map[layer_name]
+            attr.Name = getattr(obj, 'name', '')
+            # Set color
+            color = None
+            if type_name == "Mesh":
+                from session_py.mesh import ColorMode
+                mode = obj.color_mode
+                if mode == ColorMode.OBJECTCOLOR:
+                    oc = obj.objectcolor
+                    if oc[0] != 255 or oc[1] != 255 or oc[2] != 255:
+                        color = oc
+            elif hasattr(obj, 'linecolor') and obj.linecolor is not None:
+                lc = obj.linecolor
+                if lc[0] != 255 or lc[1] != 255 or lc[2] != 255:
+                    color = lc
+            if color is not None:
+                attr.ObjectColor = System.Drawing.Color.FromArgb(color[3], color[0], color[1], color[2])
+                attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+            # Add to File3dm by type
+            if isinstance(rhino_geo, Rhino.Geometry.Mesh):
+                f3dm.Objects.AddMesh(rhino_geo, attr)
+            elif isinstance(rhino_geo, Rhino.Geometry.Curve):
+                f3dm.Objects.AddCurve(rhino_geo, attr)
+            elif isinstance(rhino_geo, Rhino.Geometry.Point3d):
+                f3dm.Objects.AddPoint(rhino_geo)
+            elif isinstance(rhino_geo, Rhino.Geometry.Brep):
+                f3dm.Objects.AddBrep(rhino_geo, attr)
+            elif isinstance(rhino_geo, Rhino.Geometry.Surface):
+                f3dm.Objects.AddSurface(rhino_geo, attr)
+
+        # Write to temp file and import
+        import tempfile, os
+        tmp = tempfile.mktemp(suffix=".3dm")
+        f3dm.Write(tmp, 8)
+
+        doc.Views.RedrawEnabled = False
         doc.Views.EnableRedraw(False, False, False)
         try:
             for guid_str in old_guids:
                 doc.Objects.Delete(System.Guid(guid_str), True)
-            for obj, kwargs in self._scene:
-                type_name = type(obj).__name__
-                if type_name not in _MODULE_MAP:
-                    continue
-                module = _get_module(type_name)
-                layer_idx = guid_to_layer.get(getattr(obj, 'guid', None), 0)
-                rhino_guids = module.add(obj, layer_idx=layer_idx, **kwargs)
-                if hasattr(obj, "guid"):
-                    guid_map[obj.guid] = rhino_guids
-                new_guids.extend(str(g) for g in rhino_guids)
-
-            if self._tree and self._tree.root:
-                for node in self._tree.nodes:
-                    if not node.children or node.name not in self._lookup:
-                        continue
-                    group_guids = list(guid_map.get(node.name, []))
-                    for child in node.children:
-                        group_guids.extend(guid_map.get(child.name, []))
-                    valid = [g for g in group_guids if g != System.Guid.Empty]
-                    if len(valid) >= 2:
-                        doc.Groups.Add(valid)
+            scriptcontext = __import__('scriptcontext')
+            scriptcontext.doc.Import(tmp)
         finally:
             doc.Views.EnableRedraw(True, False, False)
-            doc.EndUndoRecord(record)
+            doc.Views.RedrawEnabled = True
+
+        try:
+            os.remove(tmp)
+        except:
+            pass
 
         self._scene.clear()
-        if delete:
-            _save_guids(new_guids)
-        else:
-            _save_guids(old_guids + new_guids)
+        _save_guids([])
         doc.Views.Redraw()
-        return new_guids
+        return []
 
     def to_rhino(self, obj):
         module = _get_module(type(obj).__name__)
