@@ -122,9 +122,11 @@ def _to_rhino_face_colors(mesh):
             f_offset += 1
         else:
             from session_py.remesh_cdt import RemeshCDT; _cdt = RemeshCDT.triangulate
+            from session_py import Polyline as _Pl, Point as _Pt
             start_fi = f_offset
             pts3d = [mesh.vertex[vk].position() for vk in vks]
-            cdt_tris = _cdt(_project_to_2d(pts3d))
+            pts2d = _project_to_2d(pts3d)
+            cdt_tris = _cdt([_Pl([_Pt(u, v, 0) for u, v in pts2d])])
             if cdt_tris:
                 for t in cdt_tris:
                     rmesh.Faces.AddFace(base + t[0], base + t[1], base + t[2])
@@ -317,6 +319,7 @@ def to_rhino(mesh):
             f_offset += 1
         else:
             from session_py.remesh_cdt import RemeshCDT; _cdt = RemeshCDT.triangulate
+            from session_py import Polyline as _Pl, Point as _Pt
             rmesh.Vertices.AddVertices(_pt3d_array(vks, mesh.vertex))
             if use_vc:
                 for vk in vks:
@@ -324,7 +327,8 @@ def to_rhino(mesh):
                     c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
                     rmesh.VertexColors.Add(int(c[0]), int(c[1]), int(c[2]))
             pts3d = [mesh.vertex[vk].position() for vk in vks]
-            cdt_tris = _cdt(_project_to_2d(pts3d))
+            pts2d = _project_to_2d(pts3d)
+            cdt_tris = _cdt([_Pl([_Pt(u, v, 0) for u, v in pts2d])])
             start_fi = f_offset
             if cdt_tris:
                 for t in cdt_tris:

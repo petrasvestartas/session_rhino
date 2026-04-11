@@ -99,12 +99,20 @@ class Session:
             f3dm.AllLayers.Add(layer)
             f3dm_layer_map[lname] = f3dm.AllLayers.Count - 1
 
+        # Collect planes — drawn separately into active doc after import for grouping
+        plane_objs = []
+
         # Convert all objects and add to File3dm
         _module_cache = {}
         for obj, kwargs in self._scene:
             type_name = type(obj).__name__
             if type_name not in _MODULE_MAP:
                 continue
+
+            if type_name == "Plane":
+                plane_objs.append(obj)
+                continue
+
             if type_name not in _module_cache:
                 _module_cache[type_name] = _get_module(type_name)
             module = _module_cache[type_name]
@@ -126,7 +134,7 @@ class Session:
                     oc = obj.objectcolor
                     if oc[0] != 255 or oc[1] != 255 or oc[2] != 255:
                         color = oc
-            elif hasattr(obj, 'linecolor') and obj.linecolor is not None:
+            elif isinstance(obj, object) and hasattr(obj, 'linecolor') and obj.linecolor is not None:
                 lc = obj.linecolor
                 if lc[0] != 255 or lc[1] != 255 or lc[2] != 255:
                     color = lc
@@ -157,6 +165,35 @@ class Session:
                 doc.Objects.Delete(System.Guid(guid_str), True)
             scriptcontext = __import__('scriptcontext')
             scriptcontext.doc.Import(tmp)
+
+            # Draw planes directly to active doc with grouping
+            if plane_objs:
+                pl_module = _get_module("Polyline")
+                for plane_obj in plane_objs:
+                    obj_guid = getattr(plane_obj, 'guid', None)
+                    layer_name = guid_to_layer.get(obj_guid)
+                    layer_idx = 0
+                    if layer_name:
+                        found = doc.Layers.FindName(layer_name) if hasattr(doc.Layers, 'FindName') else None
+                        if found:
+                            layer_idx = found.Index
+                    plane_guids = []
+                    for pl in plane_obj.to_polylines(plane_obj.width):
+                        rhino_geo = pl_module.to_rhino(pl)
+                        if rhino_geo is None:
+                            continue
+                        attr = Rhino.DocObjects.ObjectAttributes()
+                        attr.LayerIndex = layer_idx
+                        attr.Name = getattr(plane_obj, 'name', '')
+                        lc = pl.linecolor
+                        if lc[0] != 255 or lc[1] != 255 or lc[2] != 255:
+                            attr.ObjectColor = System.Drawing.Color.FromArgb(lc[3], lc[0], lc[1], lc[2])
+                            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+                        gid = doc.Objects.AddCurve(rhino_geo, attr)
+                        if gid != System.Guid.Empty:
+                            plane_guids.append(gid)
+                    if plane_guids:
+                        doc.Groups.Add(plane_guids)
         finally:
             doc.Views.EnableRedraw(True, False, False)
             doc.Views.RedrawEnabled = True
