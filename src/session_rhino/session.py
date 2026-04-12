@@ -248,9 +248,7 @@ class Session:
                             element_guids.append(gid)
                     if element_guids:
                         print(f"  grouping {group_name}: {len(element_guids)} objects")
-                        group_idx = doc.Groups.Add(element_guids)
-                        if group_idx >= 0:
-                            doc.Groups.SetGroupName(group_idx, group_name)
+                        doc.Groups.Add(element_guids)
         finally:
             doc.Views.EnableRedraw(True, False, False)
             doc.Views.RedrawEnabled = True
