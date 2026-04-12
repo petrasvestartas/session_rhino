@@ -4,7 +4,7 @@
 Run in Rhino 8 Script Editor.
 Compares three ways to convert flat [x,y,z,...] coords into PolylineCurve:
   A) current session_rhino approach (intermediate objects + Python list)
-  B) System.Array.CreateInstance + direct flat-coord indexing
+  B) direct flat-coord indexing (skip intermediate Point objects)
   C) Rhino.Geometry.Polyline() builder
 """
 import System
@@ -47,15 +47,15 @@ def method_a_current(all_coords, m):
     return curves
 
 
-def method_b_system_array(all_coords, m):
-    """System.Array + direct flat-coord indexing, no intermediate objects."""
+def method_b_direct_flat(all_coords, m):
+    """Direct flat-coord indexing, no intermediate objects, Python list."""
     curves = []
     for coords in all_coords:
-        arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, m)
+        pts = []
         for i in range(m):
             j = i * 3
-            arr[i] = Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2])
-        curves.append(Rhino.Geometry.PolylineCurve(arr))
+            pts.append(Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2]))
+        curves.append(Rhino.Geometry.PolylineCurve(pts))
     return curves
 
 
@@ -93,16 +93,16 @@ print("=" * 65)
 all_coords = make_flat_coords(N, M)
 
 t_a = time_method(method_a_current, all_coords, M)
-t_b = time_method(method_b_system_array, all_coords, M)
+t_b = time_method(method_b_direct_flat, all_coords, M)
 t_c = time_method(method_c_polyline_builder, all_coords, M)
 
 print(f"  A) current (get_points + list):    {t_a:>6} ms")
-print(f"  B) System.Array + flat coords:     {t_b:>6} ms  ({t_a/t_b if t_b else 0:.1f}x faster)")
+print(f"  B) direct flat coords (no Point):  {t_b:>6} ms  ({t_a/t_b if t_b else 0:.1f}x faster)")
 print(f"  C) Polyline builder + flat coords: {t_c:>6} ms  ({t_a/t_c if t_c else 0:.1f}x faster)")
 print()
 print("Method A simulates current rhino_polyline.to_rhino():")
-print("  get_points() → N Point objects → N Point3d via float(p[0])...")
-print("Method B skips intermediate objects, indexes flat coords directly")
+print("  get_points() -> N Point objects -> N Point3d via float(p[0])...")
+print("Method B skips intermediate Point objects, indexes flat coords directly")
 print("Method C uses Rhino.Geometry.Polyline.Add() builder")
 print()
 
@@ -110,5 +110,5 @@ print()
 for m2 in [10, 50, 500]:
     all_coords2 = make_flat_coords(N, m2)
     ta2 = time_method(method_a_current, all_coords2, m2)
-    tb2 = time_method(method_b_system_array, all_coords2, m2)
+    tb2 = time_method(method_b_direct_flat, all_coords2, m2)
     print(f"  {N}x{m2:>3} pts: A={ta2:>5}ms  B={tb2:>5}ms  speedup={ta2/tb2 if tb2 else 0:.1f}x")

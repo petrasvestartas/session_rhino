@@ -2,9 +2,9 @@
 """Benchmark: full session_rhino pipeline broken into phases.
 
 Run in Rhino 8 Script Editor.
-Times each phase of the pb → Rhino pipeline to show where time is spent:
+Times each phase of the pb -> Rhino pipeline to show where time is spent:
   Phase 1: protobuf deserialization
-  Phase 2: session_py → Rhino geometry conversion
+  Phase 2: session_py -> Rhino geometry conversion
   Phase 3a: add to doc (direct AddCurve)
   Phase 3b: add to doc (File3dm write+import)
 
@@ -41,18 +41,18 @@ def phase2_convert_current(polylines):
 
 
 def phase2_convert_optimized(polylines):
-    """Convert using System.Array + flat coord access."""
+    """Convert using direct flat coord access (no intermediate Point objects)."""
     sw = System.Diagnostics.Stopwatch()
     sw.Start()
     curves = []
     for pl in polylines:
         n = pl.point_count()
-        arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, n)
         coords = pl._coords
+        rpl = Rhino.Geometry.Polyline(n)
         for i in range(n):
             j = i * 3
-            arr[i] = Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2])
-        curves.append(Rhino.Geometry.PolylineCurve(arr))
+            rpl.Add(Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2]))
+        curves.append(Rhino.Geometry.PolylineCurve(rpl))
     sw.Stop()
     return curves, sw.ElapsedMilliseconds
 

@@ -18,16 +18,16 @@ def make_curves(n, pts_per_curve=5, seed=42):
     random.seed(seed)
     curves = []
     for _ in range(n):
-        arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, pts_per_curve)
+        pl = Rhino.Geometry.Polyline(pts_per_curve)
         cx = random.random() * 100
         cy = random.random() * 100
         for j in range(pts_per_curve):
-            arr[j] = Rhino.Geometry.Point3d(
+            pl.Add(Rhino.Geometry.Point3d(
                 cx + random.random() * 10,
                 cy + random.random() * 10,
                 random.random() * 5,
-            )
-        curves.append(Rhino.Geometry.PolylineCurve(arr))
+            ))
+        curves.append(Rhino.Geometry.PolylineCurve(pl))
     return curves
 
 
