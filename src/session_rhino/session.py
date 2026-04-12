@@ -99,8 +99,11 @@ class Session:
             f3dm.AllLayers.Add(layer)
             f3dm_layer_map[lname] = f3dm.AllLayers.Count - 1
 
-        # Collect planes — drawn separately into active doc after import for grouping
+        # Collect planes and per-element grouped objects — drawn separately
+        # into active doc after import so we can create Rhino groups.
         plane_objs = []
+        # group_key -> [(obj, layer_name)] for objects that need Rhino grouping
+        grouped_objs = {}
 
         # Convert all objects and add to File3dm
         _module_cache = {}
@@ -113,6 +116,14 @@ class Session:
                 plane_objs.append(obj)
                 continue
 
+            # Check if this object belongs to a per-element group (element_N)
+            # If so, draw it directly to the doc later with Rhino grouping.
+            obj_guid = getattr(obj, 'guid', None)
+            layer_name = guid_to_layer.get(obj_guid)
+            if layer_name and layer_name.startswith("element_"):
+                grouped_objs.setdefault(layer_name, []).append((obj, layer_name))
+                continue
+
             if type_name not in _module_cache:
                 _module_cache[type_name] = _get_module(type_name)
             module = _module_cache[type_name]
@@ -120,8 +131,6 @@ class Session:
             if rhino_geo is None:
                 continue
             attr = Rhino.DocObjects.ObjectAttributes()
-            obj_guid = getattr(obj, 'guid', None)
-            layer_name = guid_to_layer.get(obj_guid)
             if layer_name and layer_name in f3dm_layer_map:
                 attr.LayerIndex = f3dm_layer_map[layer_name]
             attr.Name = getattr(obj, 'name', '')
@@ -194,6 +203,50 @@ class Session:
                             plane_guids.append(gid)
                     if plane_guids:
                         doc.Groups.Add(plane_guids)
+
+            # Draw per-element grouped objects directly to doc with Rhino groups
+            if grouped_objs:
+                for group_name, obj_list in grouped_objs.items():
+                    layer_idx = 0
+                    found = doc.Layers.FindName(group_name) if hasattr(doc.Layers, 'FindName') else None
+                    if not found:
+                        li = Rhino.DocObjects.Layer()
+                        li.Name = group_name
+                        layer_idx = doc.Layers.Add(li)
+                    else:
+                        layer_idx = found.Index
+                    element_guids = []
+                    for obj, _ in obj_list:
+                        type_name = type(obj).__name__
+                        if type_name not in _module_cache:
+                            _module_cache[type_name] = _get_module(type_name)
+                        module = _module_cache[type_name]
+                        rhino_geo = module.to_rhino(obj)
+                        if rhino_geo is None:
+                            continue
+                        attr = Rhino.DocObjects.ObjectAttributes()
+                        attr.LayerIndex = layer_idx
+                        attr.Name = getattr(obj, 'name', '')
+                        lc = getattr(obj, 'linecolor', None)
+                        if lc is not None and (lc[0] != 255 or lc[1] != 255 or lc[2] != 255):
+                            attr.ObjectColor = System.Drawing.Color.FromArgb(lc[3], lc[0], lc[1], lc[2])
+                            attr.ColorSource = Rhino.DocObjects.ObjectColorSource.ColorFromObject
+                        if isinstance(rhino_geo, Rhino.Geometry.Mesh):
+                            gid = doc.Objects.AddMesh(rhino_geo, attr)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Curve):
+                            gid = doc.Objects.AddCurve(rhino_geo, attr)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Point3d):
+                            gid = doc.Objects.AddPoint(rhino_geo)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Brep):
+                            gid = doc.Objects.AddBrep(rhino_geo, attr)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Surface):
+                            gid = doc.Objects.AddSurface(rhino_geo, attr)
+                        else:
+                            continue
+                        if gid != System.Guid.Empty:
+                            element_guids.append(gid)
+                    if element_guids:
+                        doc.Groups.Add(group_name, element_guids)
         finally:
             doc.Views.EnableRedraw(True, False, False)
             doc.Views.RedrawEnabled = True
