@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "session_rhino"
-version = "0.21.0"
+version = "0.22.0"
 description = "RhinoCommon converters for session_py geometry"
 authors = [{name = "Petras Vestartas", email = "petrasvestartas@gmail.com"}]
 license = {text = "MIT"}
