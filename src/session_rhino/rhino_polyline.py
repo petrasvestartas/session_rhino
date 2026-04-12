@@ -10,17 +10,20 @@ def from_rhino(rpl):
     pl = SPPolyline.__new__(SPPolyline)
     pl.guid = _ZERO_GUID; pl.name = ""; pl.width = 1.0
     pl.linecolor = None; pl.xform = _IDENTITY_XFORM; pl.plane = Plane()
-    pl._coords = []
+    pl.coords = []
     for v in vertices:
-        pl._coords.extend([float(v.X), float(v.Y), float(v.Z)])
+        pl.coords.extend([float(v.X), float(v.Y), float(v.Z)])
     return pl
 
 
 def to_rhino(pl):
-    pts = []
-    for p in pl.get_points():
-        pts.append(Rhino.Geometry.Point3d(float(p[0]), float(p[1]), float(p[2])))
-    return Rhino.Geometry.PolylineCurve(pts)
+    n = pl.point_count()
+    rpl = Rhino.Geometry.Polyline(n)
+    coords = pl.coords
+    for i in range(n):
+        j = i * 3
+        rpl.Add(Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2]))
+    return Rhino.Geometry.PolylineCurve(rpl)
 
 
 def add(obj_or_list, layer_idx=0, **kwargs):

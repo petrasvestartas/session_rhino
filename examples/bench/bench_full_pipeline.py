@@ -47,7 +47,7 @@ def phase2_convert_optimized(polylines):
     curves = []
     for pl in polylines:
         n = pl.point_count()
-        coords = pl._coords
+        coords = pl.coords
         rpl = Rhino.Geometry.Polyline(n)
         for i in range(n):
             j = i * 3
