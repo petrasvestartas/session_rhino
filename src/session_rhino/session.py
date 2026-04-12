@@ -205,6 +205,7 @@ class Session:
                         doc.Groups.Add(plane_guids)
 
             # Draw per-element grouped objects directly to doc with Rhino groups
+            print(f"[session_rhino] grouped_objs: {len(grouped_objs)} element groups")
             if grouped_objs:
                 for group_name, obj_list in grouped_objs.items():
                     layer_idx = 0
