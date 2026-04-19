@@ -67,12 +67,12 @@ filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_inplane_hilti.pb" # n
 
 # ── hex / VDA / misc ──────────────────────────────────────────────────────
 # filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_hexbox_and_corner.pb"
-# filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_hex_block_rossiniere.pb" # smth is completey wrong
+filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_hex_block_rossiniere.pb" # smth is completey wrong
 # filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_vda_floor_0.pb"
 # filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_vda_floor_2.pb"
 
 # ── beams ─────────────────────────────────────────────────────────────────
-filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_phanomema_node.pb" # nothing is implemented at all empty dataset
+# filepath = r"C:\brg\code_rust\session\session_data\WoodF2F_phanomema_node.pb" # nothing is implemented at all empty dataset
 
 
 scene = Session.load(filepath)

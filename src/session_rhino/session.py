@@ -20,7 +20,12 @@ _MODULE_MAP = {
 
 
 def _get_module(type_name):
-    return importlib.import_module(_MODULE_MAP[type_name])
+    import sys
+    mod_name = _MODULE_MAP[type_name]
+    mod = importlib.import_module(mod_name)
+    if mod_name in sys.modules:
+        mod = importlib.reload(mod)
+    return mod
 
 
 def _load_guids():
