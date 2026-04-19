@@ -3,10 +3,14 @@ import System
 
 
 def to_rhino(ln):
-    return Rhino.Geometry.Line(
+    # Return a LineCurve so the Rhino bake path (which isinstance-checks
+    # `Rhino.Geometry.Curve`) accepts it. Plain `Rhino.Geometry.Line` is a
+    # struct, not a Curve, and is silently dropped by `session.draw()`.
+    line = Rhino.Geometry.Line(
         Rhino.Geometry.Point3d(ln[0], ln[1], ln[2]),
         Rhino.Geometry.Point3d(ln[3], ln[4], ln[5])
     )
+    return Rhino.Geometry.LineCurve(line)
 
 
 def add(obj_or_list, layer_idx=0, **kwargs):
@@ -24,5 +28,5 @@ def add(obj_or_list, layer_idx=0, **kwargs):
         if ln.width > 0 and ln.width != 1.0:
             attr.PlotWeight = ln.width
             attr.PlotWeightSource = Rhino.DocObjects.ObjectPlotWeightSource.PlotWeightFromObject
-        guids.append(doc.Objects.AddLine(rln, attr))
+        guids.append(doc.Objects.AddCurve(rln, attr))
     return guids
