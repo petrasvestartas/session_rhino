@@ -38,10 +38,10 @@ serial_dir = Path(__file__).resolve().parent.parent / "session_cpp" / "serializa
 json_path = serial_dir / "test_nurbscurve.json"
 bin_path = serial_dir / "test_nurbscurve.bin"
 
-curve.json_dump(json_path)
+curve.file_json_dump(json_path)
 curve.pb_dump(bin_path)
 
-loaded_json = NurbsCurve.json_load(json_path)
+loaded_json = NurbsCurve.file_json_load(json_path)
 loaded_pb = NurbsCurve.pb_load(bin_path)
 
 print(f"Loaded JSON str: {str(loaded_json)}")

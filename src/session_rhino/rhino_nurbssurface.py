@@ -10,11 +10,11 @@ def _build_rhino_surface(srf):
     n_u = srf.cv_count(0)
     n_v = srf.cv_count(1)
     rsrf = Rhino.Geometry.NurbsSurface.Create(dim, is_rat, order_u, order_v, n_u, n_v)
-    knots_u = srf.get_knots(0)
-    knots_v = srf.get_knots(1)
-    for i, k in enumerate(knots_u):
+    nurbsknots_u = srf.get_nurbsknots(0)
+    nurbsknots_v = srf.get_nurbsknots(1)
+    for i, k in enumerate(nurbsknots_u):
         rsrf.KnotsU[i] = k
-    for i, k in enumerate(knots_v):
+    for i, k in enumerate(nurbsknots_v):
         rsrf.KnotsV[i] = k
     for i in range(n_u):
         for j in range(n_v):

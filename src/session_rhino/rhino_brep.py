@@ -117,15 +117,34 @@ def _build_with_builder(brep):
                             Rhino.Geometry.Point3d(u1[0], u1[1], 0))
                         b.AddTrim(ei, rev, Rhino.Geometry.Interval(0, 1), seg2d)
                 else:
-                    # Non-linear boundary (circle hole) — single closed edge
+                    # Non-linear boundary — rational NURBS arc (open or closed)
                     r3d = rhino_nurbscurve.to_rhino(crv3d)
                     r2d = rhino_nurbscurve.to_rhino(crv2d)
-                    ps = crv3d.get_cv(0)
-                    vs = add_vert(ps[0], ps[1], ps[2])
-                    ei = b.AddEdge(vs, vs, r3d, doc_tol)
                     dom = Rhino.Geometry.Interval(
-                        crv3d.knot(0), crv3d.knot(crv3d.knot_count() - 1))
-                    b.AddTrim(ei, bool(trim.reversed), dom, r2d)
+                        crv3d.nurbsknot(0), crv3d.nurbsknot(crv3d.nurbsknot_count() - 1))
+                    if edge.start_vertex == edge.end_vertex:
+                        # Closed curve (full circle hole)
+                        ps = crv3d.get_cv(0)
+                        vs = add_vert(ps[0], ps[1], ps[2])
+                        key = (vs, vs)
+                        if key not in edge_ids:
+                            edge_ids[key] = (b.AddEdge(vs, vs, r3d, doc_tol), vs, vs)
+                        ei = edge_ids[key][0]
+                        rev = False
+                    else:
+                        # Open arc — deduplicate by (min_v, max_v)
+                        sv = brep.m_topology_vertices[edge.start_vertex]
+                        ev = brep.m_topology_vertices[edge.end_vertex]
+                        ps = brep.m_vertices[sv.point_index]
+                        pe = brep.m_vertices[ev.point_index]
+                        v0 = add_vert(ps[0], ps[1], ps[2])
+                        v1 = add_vert(pe[0], pe[1], pe[2])
+                        key = (min(v0, v1), max(v0, v1))
+                        if key not in edge_ids:
+                            edge_ids[key] = (b.AddEdge(v0, v1, r3d, doc_tol), v0, v1)
+                        ei, ev0, ev1 = edge_ids[key]
+                        rev = (ev0 != v0)
+                    b.AddTrim(ei, rev ^ bool(trim.reversed), dom, r2d)
 
     result = b.GetResult()
     if result is None:
@@ -184,7 +203,8 @@ def _join_curves(curves, tol):
     """Join multiple curves into one. Returns single curve or None."""
     if len(curves) == 1:
         return curves[0]
-    joined = Rhino.Geometry.Curve.JoinCurves(curves, tol)
+    arr = System.Array[Rhino.Geometry.Curve](curves)
+    joined = Rhino.Geometry.Curve.JoinCurves(arr, tol)
     if joined and len(joined) > 0:
         return joined[0]
     return None

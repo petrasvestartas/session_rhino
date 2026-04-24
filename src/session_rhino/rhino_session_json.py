@@ -34,7 +34,7 @@ def _json_to_mesh(data):
 def _json_to_nurbscurve(data):
     cps = data["control_points"]
     order = data["order"]
-    knots = data["knots"]
+    nurbsknots = data["nurbsknots"]
     is_rat = data.get("is_rational", False)
     n = len(cps)
     if n < 2:
@@ -42,8 +42,8 @@ def _json_to_nurbscurve(data):
     nc = Rhino.Geometry.NurbsCurve(3, is_rat, order, n)
     for i, cp in enumerate(cps):
         nc.Points.SetPoint(i, Rhino.Geometry.Point3d(cp[0], cp[1], cp[2]))
-    for i, k in enumerate(knots):
-        nc.Knots[i] = k
+    for i, k in enumerate(nurbsknots):
+        nc.NurbsKnots[i] = k
     return nc
 
 
@@ -55,10 +55,10 @@ def _json_to_nurbssurface(data):
     n_u = data["cv_count_u"]
     n_v = data["cv_count_v"]
     rsrf = Rhino.Geometry.NurbsSurface.Create(dim, is_rat, order_u, order_v, n_u, n_v)
-    for i, k in enumerate(data["knots_u"]):
-        rsrf.KnotsU[i] = k
-    for i, k in enumerate(data["knots_v"]):
-        rsrf.KnotsV[i] = k
+    for i, k in enumerate(data["nurbsknots_u"]):
+        rsrf.NurbsKnotsU[i] = k
+    for i, k in enumerate(data["nurbsknots_v"]):
+        rsrf.NurbsKnotsV[i] = k
     cps = data["control_points"]
     stride = (dim + 1) if is_rat else dim
     for i in range(n_u):
@@ -84,7 +84,7 @@ def _eval_uv_loop_on_surface(rsrf, loop_data, n_samples=100):
         pt3d = rsrf.PointAt(uv.X, uv.Y)
         pts.append(pt3d)
     return Rhino.Geometry.Curve.CreateInterpolatedCurve(
-        pts, 3, Rhino.Geometry.CurveKnotStyle.Chord)
+        pts, 3, Rhino.Geometry.CurveNurbsKnotStyle.Chord)
 
 
 def _add_nurbssurface(doc, data, colors):

@@ -243,6 +243,40 @@ def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
             i0, i1, i2, i3 = vkey_to_idx[vks[0]], vkey_to_idx[vks[1]], vkey_to_idx[vks[2]], vkey_to_idx[vks[3]]
             rmesh.Faces.AddFace(i0, i1, i2, i3)
             f_offset += 1
+        else:
+            # Polygon face (>4 verts) with no stored triangulation — typical
+            # for loft caps whose C++ CDT returned empty. Triangulate in
+            # Python using RemeshCDT (polygon + hole rings) and fall back to
+            # fan triangulation if that also yields nothing. All triangles
+            # use GLOBAL welded vertex indices so the cap stitches to the
+            # side walls.
+            from session_py.remesh_cdt import RemeshCDT
+            from session_py import Polyline as _Pl, Point as _Pt
+            pts3d = [mesh.vertex[vk].position() for vk in vks]
+            pts2d = _project_to_2d(pts3d)
+            polys = [_Pl([_Pt(u, v, 0) for u, v in pts2d])]
+            for ring in mesh.face_holes.get(fk, []):
+                r_pts = [mesh.vertex[vk].position() for vk in ring]
+                r_2d = _project_to_2d(r_pts)
+                polys.append(_Pl([_Pt(u, v, 0) for u, v in r_2d]))
+            all_vks = list(vks) + [vk for ring in mesh.face_holes.get(fk, []) for vk in ring]
+            cdt_tris = RemeshCDT.triangulate(polys)
+            if cdt_tris:
+                for t in cdt_tris:
+                    rmesh.Faces.AddFace(
+                        vkey_to_idx[all_vks[t[0]]],
+                        vkey_to_idx[all_vks[t[1]]],
+                        vkey_to_idx[all_vks[t[2]]],
+                    )
+                    f_offset += 1
+            else:
+                for i in range(1, len(vks) - 1):
+                    rmesh.Faces.AddFace(
+                        vkey_to_idx[vks[0]],
+                        vkey_to_idx[vks[i]],
+                        vkey_to_idx[vks[i + 1]],
+                    )
+                    f_offset += 1
     return rmesh
 
 
@@ -258,12 +292,14 @@ def to_rhino(mesh):
     if use_fc:
         return _to_rhino_face_colors(mesh)
 
-    if (not mesh.face_holes
-            and mesh.face
-            and all(len(v) <= 4 for v in mesh.face.values())
-            and mesh.triangulation):
+    if (mesh.face and mesh.triangulation):
         if not SESSION_CONFIG.explode_mesh_faces:
-            # welded triangles, no ngons (smooth)
+            # welded triangles, no ngons (smooth). Handles polygon faces of
+            # any size and faces with holes: hole-ring vertices are added to
+            # mesh.vertex up front and are naturally welded with side-wall
+            # vertices in this path. The polygon face's outer boundary is
+            # preserved via stored triangulation; face_holes metadata is not
+            # needed here since triangulation already excludes hole regions.
             return _to_rhino_welded_with_ngons(mesh, add_ngons=False)
 
     if (not SESSION_CONFIG.explode_mesh_faces

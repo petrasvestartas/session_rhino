@@ -30,7 +30,7 @@ def _nurbs_curve_json(nc, dim=3, name="crv"):
     order = nc.Order
     cv_count = nc.Points.Count
     is_rat = nc.IsRational
-    knots = [nc.Knots[i] for i in range(nc.Knots.Count)]
+    nurbsknots = [nc.NurbsKnots[i] for i in range(nc.NurbsKnots.Count)]
     cps = []
     for i in range(cv_count):
         pt = nc.Points.GetPoint4d(i)
@@ -46,7 +46,7 @@ def _nurbs_curve_json(nc, dim=3, name="crv"):
         "dimension": dim,
         "guid": _guid(),
         "is_rational": is_rat,
-        "knots": knots,
+        "nurbsknots": nurbsknots,
         "linecolors": [],
         "name": name,
         "order": order,
@@ -64,8 +64,8 @@ def _nurbs_surface_json(ns, name="srf"):
     cv_u = ns.Points.CountU
     cv_v = ns.Points.CountV
     is_rat = ns.IsRational
-    knots_u = [ns.KnotsU[i] for i in range(ns.KnotsU.Count)]
-    knots_v = [ns.KnotsV[i] for i in range(ns.KnotsV.Count)]
+    nurbsknots_u = [ns.NurbsKnotsU[i] for i in range(ns.NurbsKnotsU.Count)]
+    nurbsknots_v = [ns.NurbsKnotsV[i] for i in range(ns.NurbsKnotsV.Count)]
     # Flat row-major: for rational stores [x*w, y*w, z*w, w], else [x, y, z]
     cps = []
     for i in range(cv_u):
@@ -84,8 +84,8 @@ def _nurbs_surface_json(ns, name="srf"):
         "facecolors": [],
         "guid": _guid(),
         "is_rational": is_rat,
-        "knots_u": knots_u,
-        "knots_v": knots_v,
+        "nurbsknots_u": nurbsknots_u,
+        "nurbsknots_v": nurbsknots_v,
         "linecolors": [],
         "name": name,
         "order_u": order_u,

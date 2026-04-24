@@ -8,8 +8,8 @@ def to_rhino(crv):
     order = crv.order()
     cv_count = crv.cv_count()
     nc = Rhino.Geometry.NurbsCurve(dim, is_rat, order, cv_count)
-    for i in range(crv.knot_count()):
-        nc.Knots[i] = float(crv.knot(i))
+    for i in range(crv.nurbsknot_count()):
+        nc.Knots[i] = float(crv.nurbsknot(i))
     if is_rat:
         for i in range(cv_count):
             x, y, z, w = crv.get_cv_4d(i)
