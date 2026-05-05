@@ -294,20 +294,16 @@ def to_rhino(mesh):
 
     if (mesh.face and mesh.triangulation):
         if not SESSION_CONFIG.explode_mesh_faces:
-            # welded triangles, no ngons (smooth). Handles polygon faces of
-            # any size and faces with holes: hole-ring vertices are added to
-            # mesh.vertex up front and are naturally welded with side-wall
-            # vertices in this path. The polygon face's outer boundary is
-            # preserved via stored triangulation; face_holes metadata is not
-            # needed here since triangulation already excludes hole regions.
-            return _to_rhino_welded_with_ngons(mesh, add_ngons=False)
+            return _to_rhino_welded_with_ngons(mesh, add_ngons=True)
 
     if (not SESSION_CONFIG.explode_mesh_faces
-            and not mesh.triangulation
-            and not mesh.face_holes
             and mesh.face
-            and all(len(v) == 3 for v in mesh.face.values())):
-        return _to_rhino_welded_tri(mesh)
+            and not mesh.triangulation
+            and not mesh.face_holes):
+        if all(len(v) == 3 for v in mesh.face.values()):
+            return _to_rhino_welded_tri(mesh)
+        if all(len(v) in (3, 4) for v in mesh.face.values()):
+            return _to_rhino_welded_with_ngons(mesh, add_ngons=False)
 
     rmesh = Rhino.Geometry.Mesh()
     face_keys = sorted(mesh.face.keys())

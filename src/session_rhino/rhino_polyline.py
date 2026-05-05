@@ -17,12 +17,17 @@ def from_rhino(rpl):
 
 
 def to_rhino(pl):
-    n = pl.point_count()
-    rpl = Rhino.Geometry.Polyline(n)
     coords = pl.coords
-    for i in range(n):
+    rpl = Rhino.Geometry.Polyline()
+    prev = None
+    for i in range(pl.point_count()):
         j = i * 3
-        rpl.Add(Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2]))
+        pt = Rhino.Geometry.Point3d(coords[j], coords[j + 1], coords[j + 2])
+        if prev is None or pt.DistanceTo(prev) > 1e-10:
+            rpl.Add(pt)
+            prev = pt
+    if rpl.Count < 2:
+        return None
     return Rhino.Geometry.PolylineCurve(rpl)
 
 
