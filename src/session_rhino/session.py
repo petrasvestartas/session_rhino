@@ -7,6 +7,7 @@ import System
 from session_py.mesh import Mesh
 from session_py.polyline import Polyline
 from session_rhino.rhino_mesh import add as _add_mesh
+from session_rhino.rhino_mesh import add_joined as _add_mesh_joined
 from session_rhino.rhino_polyline import add as _add_polyline
 
 _MODULE_MAP = {
@@ -43,6 +44,7 @@ class Session:
 
     def __init__(self):
         self._scene = []   # queued (obj, kwargs) pairs
+        self._joined = []  # queued (meshes, kwargs) pairs for joined adds
         self._guids = []   # GUIDs added by the last draw()
 
     @staticmethod
@@ -74,6 +76,16 @@ class Session:
         for obj in objects:
             self._scene.append((obj, kwargs))
 
+    def add_joined(self, *meshes, **kwargs):
+        """Queue a list of Meshes to be joined into a single Rhino object on draw().
+
+        Use instead of looping session.add() for large collections of plate/loft
+        meshes — reduces N doc.Objects.AddMesh() calls to 1, which avoids the
+        repeated document-event overhead that makes bulk display slow.
+        """
+        from session_py.mesh import Mesh
+        self._joined.append(([m for m in meshes if isinstance(m, Mesh)], kwargs))
+
     def draw(self):
         """Delete previous objects, add queued objects, redraw."""
         doc = Rhino.RhinoDoc.ActiveDoc
@@ -82,33 +94,41 @@ class Session:
             doc.Objects.Delete(g, True)
         self._guids.clear()
 
-        for obj, _ in self._scene:
-            if isinstance(obj, Mesh):
-                self._guids.extend(_add_mesh(obj))
-            elif isinstance(obj, Polyline):
-                self._guids.extend(_add_polyline(obj))
-            else:
-                type_name = type(obj).__name__
-                if type_name in _MODULE_MAP:
-                    import importlib
-                    mod = importlib.import_module(_MODULE_MAP[type_name])
-                    rhino_geo = mod.to_rhino(obj)
-                    if rhino_geo is None:
-                        continue
-                    if isinstance(rhino_geo, Rhino.Geometry.Mesh):
-                        g = doc.Objects.AddMesh(rhino_geo)
-                    elif isinstance(rhino_geo, Rhino.Geometry.Curve):
-                        g = doc.Objects.AddCurve(rhino_geo)
-                    elif isinstance(rhino_geo, Rhino.Geometry.Point3d):
-                        g = doc.Objects.AddPoint(rhino_geo)
-                    elif isinstance(rhino_geo, Rhino.Geometry.Brep):
-                        g = doc.Objects.AddBrep(rhino_geo)
-                    elif isinstance(rhino_geo, Rhino.Geometry.Surface):
-                        g = doc.Objects.AddSurface(rhino_geo)
-                    else:
-                        continue
-                    if g != System.Guid.Empty:
-                        self._guids.append(g)
+        doc.Views.EnableRedraw(False, False, False)
+        try:
+            for obj, _ in self._scene:
+                if isinstance(obj, Mesh):
+                    self._guids.extend(_add_mesh(obj))
+                elif isinstance(obj, Polyline):
+                    self._guids.extend(_add_polyline(obj))
+                else:
+                    type_name = type(obj).__name__
+                    if type_name in _MODULE_MAP:
+                        import importlib
+                        mod = importlib.import_module(_MODULE_MAP[type_name])
+                        rhino_geo = mod.to_rhino(obj)
+                        if rhino_geo is None:
+                            continue
+                        if isinstance(rhino_geo, Rhino.Geometry.Mesh):
+                            g = doc.Objects.AddMesh(rhino_geo)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Curve):
+                            g = doc.Objects.AddCurve(rhino_geo)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Point3d):
+                            g = doc.Objects.AddPoint(rhino_geo)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Brep):
+                            g = doc.Objects.AddBrep(rhino_geo)
+                        elif isinstance(rhino_geo, Rhino.Geometry.Surface):
+                            g = doc.Objects.AddSurface(rhino_geo)
+                        else:
+                            continue
+                        if g != System.Guid.Empty:
+                            self._guids.append(g)
+
+            for meshes, _ in self._joined:
+                self._guids.extend(_add_mesh_joined(meshes))
+        finally:
+            doc.Views.EnableRedraw(True, False, False)
 
         self._scene.clear()
+        self._joined.clear()
         sc.doc.Views.Redraw()

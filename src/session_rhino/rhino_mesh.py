@@ -36,6 +36,69 @@ def _project_to_2d(pts3d):
     return [(p[0]*ux + p[1]*uy + p[2]*uz, p[0]*vx + p[1]*vy + p[2]*vz) for p in pts3d]
 
 
+def _cdt_ngon_boundary(outer_vks, hole_rings, tris):
+    """Single-loop ngon boundary for a CDT face with holes.
+
+    Rhino validates ngons by checking that every consecutive vertex pair in
+    the boundary is an actual CDT edge.  Concatenating rings in arbitrary
+    order fails because the stitching jumps (ring[-1] → next_ring[0]) may
+    not exist in the CDT.
+
+    This function searches over all permutations of hole rings and all
+    cyclic rotations of each ring to find an ordering where every stitching
+    edge — including the closing edge (last_ring[-1] → outer[0]) — is a
+    real CDT edge.  Falls back to outer-only boundary if no valid ordering
+    is found (mesh stays valid, hole ring edges show as naked wireframe).
+    """
+    if not hole_rings:
+        return list(outer_vks)
+
+    from itertools import permutations as _perms
+
+    cdt_edge_set = set()
+    for tri in tris:
+        for i in range(3):
+            a, b = tri[i], tri[(i + 1) % 3]
+            cdt_edge_set.add((min(a, b), max(a, b)))
+
+    def has_edge(a, b):
+        return (min(a, b), max(a, b)) in cdt_edge_set
+
+    outer = list(outer_vks)
+    holes = [list(h) for h in hole_rings]
+    n = len(holes)
+
+    def rotations(lst):
+        return [lst[i:] + lst[:i] for i in range(len(lst))]
+
+    outer_rots = rotations(outer)
+
+    for perm in _perms(range(n)):
+        hole_order = [holes[i] for i in perm]
+        for outer_rot in outer_rots:
+            # DFS: find cyclic rotation for each hole so stitching edges exist.
+            chosen = [None] * n
+
+            def dfs(idx, prev_end):
+                if idx == n:
+                    return has_edge(prev_end, outer_rot[0])
+                for rot in rotations(hole_order[idx]):
+                    if has_edge(prev_end, rot[0]):
+                        chosen[idx] = rot
+                        if dfs(idx + 1, rot[-1]):
+                            return True
+                return False
+
+            if dfs(0, outer_rot[-1]):
+                result = list(outer_rot)
+                for ring in chosen:
+                    result.extend(ring)
+                return result
+
+    # No valid ordering found — outer boundary only (always valid).
+    return list(outer_vks)
+
+
 def _ngon(verts, faces):
     av = System.Array.CreateInstance(System.Int32, len(verts))
     af = System.Array.CreateInstance(System.Int32, len(faces))
@@ -192,37 +255,48 @@ def _to_rhino_welded_tri(mesh):
     return rmesh
 
 
+def _set_face_flat_normal(rmesh, fi):
+    """Override all vertex normals of face fi with that face's own face normal."""
+    fn = rmesh.FaceNormals[fi]
+    flat = Rhino.Geometry.Vector3f(fn.X, fn.Y, fn.Z)
+    f = rmesh.Faces[fi]
+    rmesh.Normals[f.A] = flat
+    rmesh.Normals[f.B] = flat
+    rmesh.Normals[f.C] = flat
+    if f.IsQuad:
+        rmesh.Normals[f.D] = flat
+
+
 def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
-    """Fast welded path for meshes with stored triangulation. Shared vertices, optional ngon grouping."""
+    """Mesh conversion with optional ngon grouping.
+
+    Vertices are welded by key so ngon boundary indices stay valid.
+    Flat shading is achieved by overriding vertex normals per face after
+    ComputeNormals — no Unweld is ever called, which would break ngon
+    edge-hiding by un-sharing the vertices that CDT triangles within an ngon
+    need in common for Rhino to suppress internal edges.
+    """
     from session_py.mesh import ColorMode
     rmesh = Rhino.Geometry.Mesh()
     sorted_vkeys = sorted(mesh.vertex.keys())
     vkey_to_seq = {vk: i for i, vk in enumerate(sorted_vkeys)}
-    pos_to_rhino_idx = {}
-    unique_vkeys = []
-    vkey_to_idx = {}
-    for vk in sorted_vkeys:
-        vd = mesh.vertex[vk]
-        pos = (vd[0], vd[1], vd[2])
-        if pos not in pos_to_rhino_idx:
-            pos_to_rhino_idx[pos] = len(unique_vkeys)
-            unique_vkeys.append(vk)
-        vkey_to_idx[vk] = pos_to_rhino_idx[pos]
-    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(unique_vkeys))
-    for i, vk in enumerate(unique_vkeys):
+    vkey_to_idx = vkey_to_seq
+    arr = System.Array.CreateInstance(Rhino.Geometry.Point3d, len(sorted_vkeys))
+    for i, vk in enumerate(sorted_vkeys):
         vd = mesh.vertex[vk]
         arr[i] = Rhino.Geometry.Point3d(vd[0], vd[1], vd[2])
     rmesh.Vertices.AddVertices(arr)
     use_vc = mesh.color_mode == ColorMode.POINTCOLORS
     if use_vc and mesh.pointcolors:
-        carr = System.Array.CreateInstance(System.Drawing.Color, len(unique_vkeys))
-        for i, vk in enumerate(unique_vkeys):
+        carr = System.Array.CreateInstance(System.Drawing.Color, len(sorted_vkeys))
+        for i, vk in enumerate(sorted_vkeys):
             seq = vkey_to_seq[vk]
             c = mesh.pointcolors[seq] if seq < len(mesh.pointcolors) else (255, 255, 255)
             carr[i] = System.Drawing.Color.FromArgb(255, int(c[0]), int(c[1]), int(c[2]))
         rmesh.VertexColors.SetColors(carr)
     sorted_fkeys = sorted(mesh.face.keys())
     f_offset = 0
+    ngon_face_ranges = []  # [(start_fi, end_fi), ...] — face ranges belonging to ngons
     for fk in sorted_fkeys:
         vks = mesh.face[fk]
         stored = mesh.triangulation.get(fk)
@@ -233,8 +307,11 @@ def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
                 rmesh.Faces.AddFace(i0, i1, i2)
                 f_offset += 1
             if add_ngons:
-                ngon_vis = [vkey_to_idx[vk] for vk in vks]
+                hole_rings = mesh.face_holes.get(fk, [])
+                boundary_vks = _cdt_ngon_boundary(vks, hole_rings, stored)
+                ngon_vis = [vkey_to_idx[vk] for vk in boundary_vks]
                 rmesh.Ngons.AddNgon(_ngon(ngon_vis, range(start_fi, f_offset)))
+                ngon_face_ranges.append((start_fi, f_offset))
         elif len(vks) == 3:
             i0, i1, i2 = vkey_to_idx[vks[0]], vkey_to_idx[vks[1]], vkey_to_idx[vks[2]]
             rmesh.Faces.AddFace(i0, i1, i2)
@@ -244,12 +321,6 @@ def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
             rmesh.Faces.AddFace(i0, i1, i2, i3)
             f_offset += 1
         else:
-            # Polygon face (>4 verts) with no stored triangulation — typical
-            # for loft caps whose C++ CDT returned empty. Triangulate in
-            # Python using RemeshCDT (polygon + hole rings) and fall back to
-            # fan triangulation if that also yields nothing. All triangles
-            # use GLOBAL welded vertex indices so the cap stitches to the
-            # side walls.
             from session_py.remesh_cdt import RemeshCDT
             from session_py import Polyline as _Pl, Point as _Pt
             pts3d = [mesh.vertex[vk].position() for vk in vks]
@@ -260,6 +331,7 @@ def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
                 r_2d = _project_to_2d(r_pts)
                 polys.append(_Pl([_Pt(u, v, 0) for u, v in r_2d]))
             all_vks = list(vks) + [vk for ring in mesh.face_holes.get(fk, []) for vk in ring]
+            start_fi = f_offset
             cdt_tris = RemeshCDT.triangulate(polys)
             if cdt_tris:
                 for t in cdt_tris:
@@ -277,6 +349,48 @@ def _to_rhino_welded_with_ngons(mesh, add_ngons=False):
                         vkey_to_idx[vks[i + 1]],
                     )
                     f_offset += 1
+            if add_ngons and f_offset > start_fi:
+                ngon_vis = [vkey_to_idx[vk] for vk in all_vks]
+                rmesh.Ngons.AddNgon(_ngon(ngon_vis, range(start_fi, f_offset)))
+                ngon_face_ranges.append((start_fi, f_offset))
+
+    rmesh.FaceNormals.ComputeFaceNormals()
+    rmesh.Normals.ComputeNormals()
+
+    # Flat shading: override vertex normals per face so every face looks flat.
+    # Unweld is intentionally avoided — it un-shares vertices within ngons,
+    # causing Rhino to display internal CDT triangle edges instead of hiding them.
+    #
+    # Two-pass: non-ngon faces first, ngon cap faces second so that cap normals
+    # win over side-wall normals at shared boundary vertices.
+    ngon_fi_set = set()
+    for start_fi, end_fi in ngon_face_ranges:
+        for fi in range(start_fi, end_fi):
+            ngon_fi_set.add(fi)
+
+    total_fi = rmesh.Faces.Count
+    for fi in range(total_fi):
+        if fi not in ngon_fi_set:
+            _set_face_flat_normal(rmesh, fi)
+
+    for start_fi, end_fi in ngon_face_ranges:
+        nx = ny = nz = 0.0
+        for fi in range(start_fi, end_fi):
+            fn = rmesh.FaceNormals[fi]
+            nx += fn.X; ny += fn.Y; nz += fn.Z
+        n = end_fi - start_fi
+        if n == 0:
+            continue
+        L = (nx*nx + ny*ny + nz*nz) ** 0.5
+        if L < 1e-12:
+            continue
+        flat = Rhino.Geometry.Vector3f(float(nx/L), float(ny/L), float(nz/L))
+        for fi in range(start_fi, end_fi):
+            f = rmesh.Faces[fi]
+            rmesh.Normals[f.A] = flat
+            rmesh.Normals[f.B] = flat
+            rmesh.Normals[f.C] = flat
+
     return rmesh
 
 
@@ -385,6 +499,31 @@ def _delete_by_session_guid(doc, session_guid):
     ids = [obj.Id for obj in doc.Objects if obj.Attributes.GetUserString("session_guid") == session_guid]
     for oid in ids:
         doc.Objects.Delete(oid, True)
+
+
+def add_joined(meshes, layer_idx=0, **kwargs):
+    """Convert and join a list of Meshes into a single Rhino mesh, add as one object.
+
+    Reduces N doc.Objects.AddMesh() calls to 1, which avoids repeated
+    document-event overhead when displaying many plate loft meshes.
+    """
+    if not meshes:
+        return []
+    if len(meshes) > 1:
+        with ThreadPoolExecutor() as ex:
+            rmeshes = list(ex.map(to_rhino, meshes))
+    else:
+        rmeshes = [to_rhino(meshes[0])]
+    joined = Rhino.Geometry.Mesh()
+    for rm in rmeshes:
+        joined.Append(rm)
+    doc = Rhino.RhinoDoc.ActiveDoc
+    attr = Rhino.DocObjects.ObjectAttributes()
+    attr.LayerIndex = layer_idx
+    guid = doc.Objects.AddMesh(joined, attr)
+    if guid != System.Guid.Empty:
+        return [guid]
+    return []
 
 
 def add(obj_or_list, layer_idx=0, **kwargs):

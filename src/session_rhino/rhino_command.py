@@ -157,6 +157,26 @@ def handle_mesh_input(option_name, hide=True):
     return meshes
 
 
+def handle_surface_input(option_name, hide=True):
+    """Select Surface objects from the Rhino document."""
+    go = Rhino.Input.Custom.GetObject()
+    go.SetCommandPrompt(f"Select {option_name}")
+    go.GeometryFilter = Rhino.DocObjects.ObjectType.Surface
+    go.EnablePreSelect(True, True)
+    go.SubObjectSelect = False
+    go.DeselectAllBeforePostSelect = False
+    go.GetMultiple(1, 0)
+    surfaces = []
+    if go.CommandResult() == Rhino.Commands.Result.Success:
+        for i in range(go.ObjectCount):
+            obj = go.Object(i)
+            srf = obj.Surface()
+            if srf:
+                surfaces.append(srf)
+        Rhino.RhinoDoc.ActiveDoc.Views.Redraw()
+    return surfaces
+
+
 def handle_brep_input(option_name, hide=True):
     """Select Brep objects from the Rhino document."""
     go = Rhino.Input.Custom.GetObject()
@@ -320,6 +340,12 @@ def process_input(
                 if result:
                     dict_values[option_name] = result
                     Rhino.RhinoApp.WriteLine(f"{option_name}: {len(result)} breps")
+
+            elif get_origin(input_type) is list and get_args(input_type) == (Rhino.Geometry.Surface,):
+                result = handle_surface_input(option_name, hide_input)
+                if result:
+                    dict_values[option_name] = result
+                    Rhino.RhinoApp.WriteLine(f"{option_name}: {len(result)} surfaces")
 
             elif input_type is Callable:
                 if dict_values[option_name]:
