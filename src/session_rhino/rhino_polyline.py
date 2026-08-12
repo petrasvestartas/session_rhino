@@ -4,12 +4,12 @@ import System
 
 def from_rhino(rpl):
     from session_py import Polyline as SPPolyline
-    from session_py.brep import _IDENTITY_XFORM, _ZERO_GUID
+    from session_py.brep import _ZERO_GUID
     from session_py.plane import Plane
     vertices = rpl.ToPolyline() if hasattr(rpl, 'ToPolyline') else rpl
     pl = SPPolyline.__new__(SPPolyline)
     pl.guid = _ZERO_GUID; pl.name = ""; pl.width = 1.0
-    pl.linecolor = None; pl.xform = _IDENTITY_XFORM; pl.plane = Plane()
+    pl.linecolor = None; pl.plane = Plane()
     pl.coords = []
     for v in vertices:
         pl.coords.extend([float(v.X), float(v.Y), float(v.Z)])
