@@ -1,4 +1,5 @@
-"""Headless test: STEP pb -> Rhino BRep. Run with Rhino's Python."""
+"""Headless test: session BRep -> Rhino BRep. Run with Rhino's Python."""
+import os
 import sys
 sys.path.insert(0, r"C:\brg\code_rust\session\session_py\src")
 sys.path.insert(0, r"C:\brg\code_rust\session\session_rhino\src")
@@ -15,10 +16,12 @@ Rhino.RhinoDoc.ActiveDoc = doc
 from session_py.brep import BRep
 from session_rhino.rhino_brep import _build_with_builder, _build_with_createplanar, to_rhino
 
-PB = r"C:\brg\code_rust\session\serialization\schoring_body_end_0_0.pb"
-OUT = r"C:\brg\code_rust\session\session_rhino\test_step_result.3dm"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+JSON = os.path.join(ROOT, "session_data", "brep_demo.json")
+OUT = os.path.join(ROOT, "session_rhino", "test_step_result.3dm")
 
-brep = BRep.pb_load(PB)
+from session_py import Session
+brep = Session.file_json_load(JSON).objects.breps[0]
 print("BRep: faces=%d edges=%d verts=%d" % (brep.face_count(), brep.edge_count(), brep.vertex_count()))
 uses = [er for f in brep.m_faces for w in f.wires for er in brep.wire_edges(w)]
 print("edge uses: total=%d  reversed=%d  forward=%d" % (
