@@ -28,14 +28,12 @@ for vi in range(srf.cv_count(0)):
         cv = srf.get_cv(vi, vj)
         print(f"  cv[{vi},{vj}] = ({cv[0]:.3f}, {cv[1]:.3f}, {cv[2]:.3f})")
 
-outer_li = next((li for li in face.loop_indices if b.m_loops[li].type == 0), None)
-loop = b.m_loops[outer_li]
-for ti in loop.trim_indices:
-    trim = b.m_trims[ti]
-    edge = b.m_topology_edges[trim.edge_index]
+fi = b.m_faces.index(face)
+for er in b.wire_edges(face.wires[0]):
+    edge = b.m_edges[er.index]
     crv3d = b.m_curves_3d[edge.curve_3d_index]
-    crv2d = b.m_curves_2d[trim.curve_2d_index]
-    print(f"\n[3D curve] order={crv3d.order()} cvs={crv3d.cv_count()} reversed={trim.reversed}")
+    crv2d = b.m_curves_2d[b.pcurve_index(er.index, fi, er.orientation)]
+    print(f"\n[3D curve] order={crv3d.order()} cvs={crv3d.cv_count()} reversed={er.orientation == 1}")
     for i in range(crv3d.cv_count()):
         cv = crv3d.get_cv(i)
         print(f"  3D[{i}] ({cv[0]:.3f}, {cv[1]:.3f}, {cv[2]:.3f})")

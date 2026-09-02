@@ -154,14 +154,12 @@ def check_brep_boundary_vs_mesh(path):
     mismatches = []
     for bi, brep in enumerate(breps):
         for fi, face in enumerate(brep.m_faces):
-            outer_li = next((li for li in face.loop_indices
-                             if brep.m_loops[li].type == 0), None)
-            if outer_li is None:
+            if not face.wires:
                 continue
-            loop = brep.m_loops[outer_li]
-            for ti in loop.trim_indices:
-                trim = brep.m_trims[ti]
-                edge = brep.m_topology_edges[trim.edge_index]
+            for er in brep.wire_edges(face.wires[0]):
+                edge = brep.m_edges[er.index]
+                if edge.degenerated:
+                    continue
                 crv = brep.m_curves_3d[edge.curve_3d_index]
                 if crv.order() != 2:
                     continue

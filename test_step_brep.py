@@ -20,10 +20,11 @@ OUT = r"C:\brg\code_rust\session\session_rhino\test_step_result.3dm"
 
 brep = BRep.pb_load(PB)
 print("BRep: faces=%d edges=%d verts=%d" % (brep.face_count(), brep.edge_count(), brep.vertex_count()))
-print("trims: total=%d  reversed=%d  forward=%d" % (
-    len(brep.m_trims),
-    sum(1 for t in brep.m_trims if t.reversed),
-    sum(1 for t in brep.m_trims if not t.reversed)))
+uses = [er for f in brep.m_faces for w in f.wires for er in brep.wire_edges(w)]
+print("edge uses: total=%d  reversed=%d  forward=%d" % (
+    len(uses),
+    sum(1 for u in uses if u.orientation == 1),
+    sum(1 for u in uses if u.orientation == 0)))
 
 # ---- test _build_with_builder ----
 print("\n-- _build_with_builder --")

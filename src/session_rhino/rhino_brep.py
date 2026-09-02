@@ -4,147 +4,71 @@ import System
 from . import rhino_nurbscurve
 from . import rhino_nurbssurface
 
+_FORWARD = 0
+_REVERSED = 1
+
 
 def check_naked_edges(brep):
-    """Print max gap between adjacent face boundary segments (diagnostic)."""
-    from collections import defaultdict
-    seg_map = defaultdict(list)
-    prec = 1e-6
-    for fi, face in enumerate(brep.m_faces):
-        for li in face.loop_indices:
-            loop = brep.m_loops[li]
-            if loop.type != 0:
-                continue
-            for ti in loop.trim_indices:
-                trim = brep.m_trims[ti]
-                edge = brep.m_topology_edges[trim.edge_index]
-                crv = brep.m_curves_3d[edge.curve_3d_index]
-                if crv.order() != 2:
-                    continue
-                n = crv.cv_count() - 1
-                for i in range(n):
-                    p0 = crv.get_cv(i)
-                    p1 = crv.get_cv(i + 1)
-                    k = (round(min(p0[0], p1[0]) / prec), round(min(p0[1], p1[1]) / prec),
-                         round(max(p0[0], p1[0]) / prec), round(max(p0[1], p1[1]) / prec))
-                    seg_map[k].append((fi, p0, p1))
-    for k, segs in seg_map.items():
-        if len(segs) == 2:
-            (_, a0, a1), (_, b0, b1) = segs
-            d = max(abs(a0[0] - b0[0]), abs(a0[1] - b0[1]), abs(a0[2] - b0[2]))
-            if d > 1e-10:
-                print(f"gap {d:.6f} at {k}")
+    """Print every non-degenerated edge that is not shared by exactly two face uses (diagnostic)."""
+    for ei, edge in enumerate(brep.m_edges):
+        if edge.degenerated:
+            continue
+        uses = brep.edge_faces(ei)
+        if len(uses) != 2:
+            print(f"edge {ei}: {len(uses)} face use(s)")
 
 
 def _build_with_builder(brep):
+    """Rhino BrepBuilder from the OCCT-style tables: one Rhino vertex/edge per BRep vertex/edge,
+    face same_sense from the shell orientation, wires as loops (first = outer), pcurves flipped
+    into loop-traversal direction for reversed edge uses. Degenerated edges (poles/apices) have
+    no 3D curve and are skipped; a face that needs them falls back to the surface path."""
     try:
         b = Rhino.Geometry.BrepBuilder()
     except Exception:
         return None
     doc_tol = Rhino.RhinoDoc.ActiveDoc.ModelAbsoluteTolerance
 
-    # 1. Surfaces
     srf_ids = []
     for srf in brep.m_surfaces:
         rsrf = rhino_nurbssurface.to_rhino(srf)
         srf_ids.append(b.AddSurface(rsrf) if rsrf else -1)
 
-    # 2. Vertex dedup (snap to grid)
-    prec = 1e-6
-    vert_ids = {}
+    vert_ids = []
+    for v in brep.m_vertices:
+        vert_ids.append(b.AddBrepVertex(Rhino.Geometry.Point3d(v.point[0], v.point[1], v.point[2]), doc_tol))
 
-    def add_vert(x, y, z):
-        k = (round(x / prec), round(y / prec), round(z / prec))
-        if k not in vert_ids:
-            vert_ids[k] = b.AddBrepVertex(Rhino.Geometry.Point3d(x, y, z), doc_tol)
-        return vert_ids[k]
+    edge_ids = []
+    for edge in brep.m_edges:
+        if edge.degenerated:
+            edge_ids.append(-1)
+            continue
+        r3d = rhino_nurbscurve.to_rhino(brep.m_curves_3d[edge.curve_3d_index])
+        edge_ids.append(b.AddEdge(vert_ids[edge.start_vertex], vert_ids[edge.end_vertex], r3d, doc_tol))
 
-    # 3. Edge dedup: canonical key = (min_vid, max_vid)
-    edge_ids = {}
-
-    def add_edge(x0, y0, z0, x1, y1, z1):
-        v0 = add_vert(x0, y0, z0)
-        v1 = add_vert(x1, y1, z1)
-        key = (min(v0, v1), max(v0, v1))
-        if key not in edge_ids:
-            line = Rhino.Geometry.LineCurve(
-                Rhino.Geometry.Point3d(x0, y0, z0),
-                Rhino.Geometry.Point3d(x1, y1, z1))
-            ei = b.AddEdge(v0, v1, line, doc_tol)
-            edge_ids[key] = (ei, v0, v1)
-        ei, ev0, ev1 = edge_ids[key]
-        return ei, (ev0 != v0)
-
-    # 4. Faces
     face_colors = []
-    for face in brep.m_faces:
+    for fi, face in enumerate(brep.m_faces):
         si = face.surface_index
         if si < 0 or si >= len(srf_ids) or srf_ids[si] < 0:
             continue
-        b.AddFace(srf_ids[si], bool(face.reversed))
+        b.AddFace(srf_ids[si], brep.face_orientation(fi) == _REVERSED)
         face_colors.append(face.facecolor)
 
-        for li in face.loop_indices:
-            if li < 0 or li >= len(brep.m_loops):
-                continue
-            loop = brep.m_loops[li]
-            lt = (Rhino.Geometry.BrepLoopType.Outer if loop.type == 0
-                  else Rhino.Geometry.BrepLoopType.Inner)
-            b.AddLoop(lt)
-
-            for ti in loop.trim_indices:
-                if ti < 0 or ti >= len(brep.m_trims):
+        for wi, wr in enumerate(face.wires):
+            b.AddLoop(Rhino.Geometry.BrepLoopType.Outer if wi == 0 else Rhino.Geometry.BrepLoopType.Inner)
+            for er in brep.wire_edges(wr):
+                if edge_ids[er.index] < 0:
                     continue
-                trim = brep.m_trims[ti]
-                edge = brep.m_topology_edges[trim.edge_index]
-                crv3d = brep.m_curves_3d[edge.curve_3d_index]
-                crv2d = brep.m_curves_2d[trim.curve_2d_index]
-                n = crv3d.cv_count() - 1
-
-                if crv3d.order() == 2 and n >= 2:
-                    # Linear boundary — decompose into N segments
-                    pts3 = [crv3d.get_cv(i) for i in range(n + 1)]
-                    pts2 = [crv2d.get_cv(i) for i in range(n + 1)]
-                    if trim.reversed:
-                        pts3 = list(reversed(pts3))
-                        pts2 = list(reversed(pts2))
-                    for i in range(n):
-                        p0, p1 = pts3[i], pts3[i + 1]
-                        u0, u1 = pts2[i], pts2[i + 1]
-                        ei, rev = add_edge(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2])
-                        seg2d = Rhino.Geometry.LineCurve(
-                            Rhino.Geometry.Point3d(u0[0], u0[1], 0),
-                            Rhino.Geometry.Point3d(u1[0], u1[1], 0))
-                        b.AddTrim(ei, rev, Rhino.Geometry.Interval(0, 1), seg2d)
-                else:
-                    # Non-linear boundary — rational NURBS arc (open or closed)
-                    r3d = rhino_nurbscurve.to_rhino(crv3d)
-                    r2d = rhino_nurbscurve.to_rhino(crv2d)
-                    dom = Rhino.Geometry.Interval(
-                        crv3d.nurbsknot(0), crv3d.nurbsknot(crv3d.nurbsknot_count() - 1))
-                    if edge.start_vertex == edge.end_vertex:
-                        # Closed curve (full circle hole)
-                        ps = crv3d.get_cv(0)
-                        vs = add_vert(ps[0], ps[1], ps[2])
-                        key = (vs, vs)
-                        if key not in edge_ids:
-                            edge_ids[key] = (b.AddEdge(vs, vs, r3d, doc_tol), vs, vs)
-                        ei = edge_ids[key][0]
-                        rev = False
-                    else:
-                        # Open arc — deduplicate by (min_v, max_v)
-                        sv = brep.m_topology_vertices[edge.start_vertex]
-                        ev = brep.m_topology_vertices[edge.end_vertex]
-                        ps = brep.m_vertices[sv.point_index]
-                        pe = brep.m_vertices[ev.point_index]
-                        v0 = add_vert(ps[0], ps[1], ps[2])
-                        v1 = add_vert(pe[0], pe[1], pe[2])
-                        key = (min(v0, v1), max(v0, v1))
-                        if key not in edge_ids:
-                            edge_ids[key] = (b.AddEdge(v0, v1, r3d, doc_tol), v0, v1)
-                        ei, ev0, ev1 = edge_ids[key]
-                        rev = (ev0 != v0)
-                    b.AddTrim(ei, rev ^ bool(trim.reversed), dom, r2d)
+                ci = brep.pcurve_index(er.index, fi, er.orientation)
+                if ci < 0:
+                    continue
+                crv2d = brep.m_curves_2d[ci]
+                r2d = rhino_nurbscurve.to_rhino(crv2d)
+                rev = er.orientation == _REVERSED
+                if rev:
+                    r2d.Reverse()
+                dom = Rhino.Geometry.Interval(crv2d.nurbsknot(0), crv2d.nurbsknot(crv2d.nurbsknot_count() - 1))
+                b.AddTrim(edge_ids[er.index], rev, dom, r2d)
 
     result = b.GetResult()
     if result is None:
@@ -155,40 +79,32 @@ def _build_with_builder(brep):
     return result
 
 
-def _loop_to_3d_curves(brep, loop):
-    """Get Rhino NurbsCurves for a loop from 3D edge curves."""
+def _wire_to_3d_curves(brep, wire):
+    """Rhino NurbsCurves of a wire from its 3D edge curves, in traversal direction."""
     curves = []
-    for ti in loop.trim_indices:
-        if ti < 0 or ti >= len(brep.m_trims):
+    for er in brep.wire_edges(wire):
+        edge = brep.m_edges[er.index]
+        if edge.degenerated:
             continue
-        trim = brep.m_trims[ti]
-        ei = trim.edge_index
-        if ei < 0 or ei >= len(brep.m_topology_edges):
-            continue
-        edge = brep.m_topology_edges[ei]
-        ci = edge.curve_3d_index
-        if ci < 0 or ci >= len(brep.m_curves_3d):
-            continue
-        crv3d = brep.m_curves_3d[ci]
-        rc = rhino_nurbscurve.to_rhino(crv3d)
+        rc = rhino_nurbscurve.to_rhino(brep.m_curves_3d[edge.curve_3d_index])
         if rc is not None and rc.IsValid:
-            if trim.reversed:
+            if er.orientation == _REVERSED:
                 rc.Reverse()
             curves.append(rc)
     return curves
 
 
-def _loop_to_3d_polyline(brep, loop, srf):
-    """Fallback: evaluate 2D trims on surface to get 3D polyline."""
+def _wire_to_3d_polyline(brep, fi, wire, srf):
+    """Fallback: evaluate the wire's pcurves on the surface to get a 3D polyline."""
     pts_3d = []
-    for ti in loop.trim_indices:
-        if ti < 0 or ti >= len(brep.m_trims):
+    for er in brep.wire_edges(wire):
+        ci = brep.pcurve_index(er.index, fi, er.orientation)
+        if ci < 0:
             continue
-        trim = brep.m_trims[ti]
-        if trim.curve_2d_index < 0 or trim.curve_2d_index >= len(brep.m_curves_2d):
-            continue
-        crv2d = brep.m_curves_2d[trim.curve_2d_index]
+        crv2d = brep.m_curves_2d[ci]
         pts, _ = crv2d.divide_by_count(max(crv2d.cv_count() * 4, 16))
+        if er.orientation == _REVERSED:
+            pts = list(reversed(pts))
         for k in range(len(pts) - 1):
             p3d = srf.point_at(pts[k][0], pts[k][1])
             if p3d is not None:
@@ -216,7 +132,7 @@ def _build_with_createplanar(brep):
     join_tol = 1e-3
     face_breps = []
     face_colors = []
-    for face in brep.m_faces:
+    for fi, face in enumerate(brep.m_faces):
         fc = face.facecolor
         si = face.surface_index
         if si < 0 or si >= len(brep.m_surfaces):
@@ -225,18 +141,15 @@ def _build_with_createplanar(brep):
 
         outer_curves = []
         inner_curves = []
-        for li in face.loop_indices:
-            if li < 0 or li >= len(brep.m_loops):
-                continue
-            loop = brep.m_loops[li]
-            rcurves = _loop_to_3d_curves(brep, loop)
+        for wi, wr in enumerate(face.wires):
+            rcurves = _wire_to_3d_curves(brep, wr)
             if rcurves:
                 rc = _join_curves(rcurves, join_tol)
             else:
-                rc = _loop_to_3d_polyline(brep, loop, srf)
+                rc = _wire_to_3d_polyline(brep, fi, wr, srf)
             if rc is None:
                 continue
-            if loop.type == 0:
+            if wi == 0:
                 outer_curves.append(rc)
             else:
                 inner_curves.append(rc)
